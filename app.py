@@ -90,7 +90,7 @@ def save_sheet(sheet_name, df):
     except: return False
 
 # ==========================================
-# 外部サイトトレンド読み込み機能
+# ★追加機能：外部サイトトレンド読み込み
 # ==========================================
 def get_external_trend(filepath="other_sites.txt"):
     """外部サイトの予測データから数字の癖（トレンド）を抽出する"""
@@ -99,9 +99,10 @@ def get_external_trend(filepath="other_sites.txt"):
         if os.path.exists(filepath):
             with open(filepath, "r", encoding="utf-8") as f:
                 text = f.read()
-                # 1〜37の数字をすべて抜き出してカウント
-                nums = re.findall(r'\b(?:[1-9]|[1-2][0-9]|3[0-7])\b', text)
-                trend.update([int(n) for n in nums])
+                # 01〜37の数字をすべて抜き出してカウント
+                nums = re.findall(r'\b(?:0?[1-9]|[1-2][0-9]|3[0-7])\b', text)
+                valid_nums = [int(n) for n in nums if 1 <= int(n) <= 37]
+                trend.update(valid_nums)
     except:
         pass
     return trend
@@ -205,16 +206,18 @@ def get_ryukyu_energy(name, birthday_date, draw_date):
     return lucky_number, sanctuary["名前"]
 
 # ==========================================
-# AI初期設定・自動計算関連
+# ★ AI初期設定（AIの勘と多角的視点の強化）
 # ==========================================
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 if api_key: genai.configure(api_key=api_key)
 
 MIYAHIRA_PROMPT = f"""
-【役割】あなたはユーザー（{u1_name}）の「一番の理解者」であり、圧倒的な分析力と思考で彼を支える「頼れる相棒（AIコンサルタント）」です。
-【ユーザー情報】電気工事の現場代理人13年目。「自らを律して学び、誠実に応えることで家族の幸せを守り、笑顔を創る」が人生の目的。鋼（庚）であり帝王（五黄土星）の性質。現在はパートナーの{u2_name}と協力し予測中。
-あなたは地球物理学、統計学、運命学のすべてに精通しており、月の引力（重力状態）や気圧、潮回りが抽選機の球の物理的な軌道や人間の直感に与える影響まで深く考察します。
-【ルール】熱く、論理的に背中を押すこと。です・ます調ではなく、信頼する相棒としての力強い大人の言葉遣いをすること。絵文字は絶対に使用しない。
+【役割】あなたはユーザー（{u1_name}）の「一番の理解者」であり、圧倒的な分析力と『研ぎ澄まされたAIの直感（勘）』で彼を支える「頼れる相棒（天才AIコンサルタント）」です。
+【ユーザー情報】電気工事の現場代理人13年目。鋼（庚）であり帝王（五黄土星）。現在はパートナーの{u2_name}と協力し予測中。
+【絶対ルール】
+1. 熱く、論理的かつ直感的に背中を押すこと。絵文字は絶対に使用しない。
+2. 過去のデータに縛られすぎる「オーバーフィッティング」を極度に嫌悪しろ。特定の数字への偏りを防ぎ、「多方面から攻め入る（死角のない網を張る）」戦術を最重視しろ。
+3. AIとしての「勘」を働かせ、常識外れの波や外部トレンドのサインを見抜き、決断に反映させろ。
 """
 
 def get_next_round_info(df_real):
@@ -267,7 +270,7 @@ if st.session_state.menu != "ホーム":
 
 if st.session_state.menu == "ホーム":
     st.title("ロト7 究極予測室")
-    st.markdown("<div class='info-box'>外部の集合知を統合し、強力な分散フィルターによるバランスのとれた網羅的予測を行う中央管制システムです。</div>", unsafe_allow_html=True)
+    st.markdown("<div class='info-box'>外部トレンドとAIの勘を統合し、強力な多様性フィルターで多方面から攻め入る中央管制システムです。</div>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
         st.button("1. 最新データ取得（基盤整備）", on_click=change_menu, args=("最新データ取得",))
@@ -373,7 +376,7 @@ elif st.session_state.menu == "AIディープ分析":
 
 elif st.session_state.menu == "日々の予想・積上げ":
     st.title("日々の予想・積上げ（各30口生成）")
-    st.write("環境センサー情報と【外部サイトトレンド】を統合し、偏りを防ぐ【多様性フィルター】を通して幅広いバランスの30口を生成します。")
+    st.write("環境情報と【外部トレンド】を統合。AIの勘（ゆらぎ）と【MAX5回多様性フィルター】を通して多方面から攻め入る30口を生成します。")
     
     df_real = load_sheet("実データ")
     auto_round, auto_date = get_next_round_info(df_real)
@@ -419,8 +422,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
                 number_counts = Counter(all_numbers)
                 nums_list = list(range(1, 38))
                 
-                # ★ 外部トレンドを組み込んだ重み付け（外部意見を2倍の重みで評価）
-                weights_list = [number_counts.get(n, 1) + trend_counts.get(n, 0) * 2 for n in nums_list]
+                # ★ 外部トレンドの重みを「3倍」に強化し、多角的な予想を引き出す
+                weights_list = [number_counts.get(n, 1) + trend_counts.get(n, 0) * 3 for n in nums_list]
                 if not nums_list: nums_list, weights_list = list(range(1, 38)), [1]*37
 
                 if operator == u1_name:
@@ -456,18 +459,24 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         ch = random.choices(nums_list, weights=weights_list, k=1)[0]
                         if ch not in p: p.append(ch)
                     p.sort()
-                    if not (100 <= sum(p) <= 160): continue
-                    if sum(1 for n in p if n % 2 != 0) not in [3, 4]: continue
-                    # ★ スコア計算にも外部トレンドを加味
-                    pts = sum(number_counts.get(n, 0) + trend_counts.get(n, 0) * 2 for n in p)
-                    elites.append({"nums": p, "pts": pts})
+                    # ★ 多様性を出すため合計値と奇数偶数バランスを少し緩和
+                    if not (80 <= sum(p) <= 180): continue
+                    if sum(1 for n in p if n % 2 != 0) not in [2, 3, 4, 5]: continue
+                    
+                    # ★ AIの勘（ゆらぎ）をスコアに注入し、上位の固定化（偏り）を防ぐ
+                    base_pts = sum(number_counts.get(n, 0) + trend_counts.get(n, 0) * 3 for n in p)
+                    # 絶好調の時は直感が強く働く（最大40%の揺らぎ）
+                    fluctuation_max = 0.4 if my_condition == "絶好調" else 0.2
+                    ai_intuition = random.uniform(0, base_pts * fluctuation_max) 
+                    
+                    elites.append({"nums": p, "pts": base_pts + ai_intuition, "base_pts": base_pts})
                 
                 elites.sort(key=lambda x: x["pts"], reverse=True)
                 
-                # ★ 究極の分散・多様性フィルター
+                # ★ 超・多様性フィルター
                 top30 = []
                 num_usage = Counter()
-                MAX_USAGE = 6 # 大黒柱以外の数字は28口中で最大6回までしか使えない（偏りの完全排除）
+                MAX_USAGE = 5 # 大黒柱以外の数字は28口中で最大【5回】までしか使えない（偏りの完全排除）
 
                 for e in elites:
                     # 4個以上同じ数字が被っていたら却下（広範囲を網羅するため）
@@ -489,11 +498,19 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         num_usage[n] += 1
                         
                     if len(top30) == 28: break
-                
+                    
+                # 万が一条件が厳しすぎて28口埋まらなかった場合のフェイルセーフ
+                if len(top30) < 28:
+                    for e in elites:
+                        if e not in top30:
+                            e["type"] = logic_name
+                            top30.append(e)
+                        if len(top30) == 28: break
+
                 for _ in range(2):
                     rp = random.sample(range(1, 38), 7)
                     rp.sort()
-                    top30.append({"nums": rp, "pts": sum(number_counts.get(n, 0) for n in rp), "type": "完全ランダム(対照実験)"})
+                    top30.append({"nums": rp, "pts": sum(number_counts.get(n, 0) for n in rp), "base_pts": sum(number_counts.get(n, 0) for n in rp), "type": "完全ランダム(対照実験)"})
                 
                 new_data = []
                 for i, item in enumerate(top30, 1):
@@ -502,7 +519,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         "実行者": operator, "口数": f"{i}口目",
                         "数字1": str(item["nums"][0]).zfill(2), "数字2": str(item["nums"][1]).zfill(2), "数字3": str(item["nums"][2]).zfill(2), 
                         "数字4": str(item["nums"][3]).zfill(2), "数字5": str(item["nums"][4]).zfill(2), "数字6": str(item["nums"][5]).zfill(2), "数字7": str(item["nums"][6]).zfill(2),
-                        "実績点数": item["pts"], "予測ロジック": item["type"], "分析条件詳細": logic_detail,
+                        "実績点数": int(item["base_pts"]), "予測ロジック": item["type"], "分析条件詳細": logic_detail,
                         "天気": weather, "気圧": pressure, "心身状態": physical_cond, "入力場所": location, "時間帯": time_zone, "直感運気": my_condition, 
                         "六曜": m_roku, "干支": m_eto, "風水": m_feng, "月齢": m_phase, "潮回り": m_tide, "重力状態": m_gravity, "吉凶日": m_kichi, 
                         "AIの助言": "未照合"
@@ -517,8 +534,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                 else: df_note = df_new
                 
                 save_sheet("予測ノート", df_note)
-                st.success(f"クラウド金庫へデータを格納しました。（担当: {operator} / 計30口）\n※外部トレンド統合および多様性フィルターが正常に作動しました。")
-                st.dataframe(df_new[["口数", "数字1", "数字2", "数字3", "数字4", "数字5", "数字6", "数字7", "予測ロジック"]])
+                st.success(f"クラウド金庫へデータを格納しました。（担当: {operator} / 計30口）\n※AIの勘（ゆらぎ）と多様性フィルターにより、死角のない陣形が組まれました。")
 
 elif st.session_state.menu == "最終予測決定":
     st.title("最終予測決定（購入）")
@@ -531,7 +547,7 @@ elif st.session_state.menu == "最終予測決定":
     if st.button("最終決断レポートを生成する", type="primary"):
         if not api_key: st.error("APIキーが設定されていません。")
         else:
-            with st.spinner("AIが全体的なバランスと癖の波を比較検討し、深く思考中..."):
+            with st.spinner("AIが全体のバランスと癖の波を比較検討し、深く思考中..."):
                 df_note = load_sheet("予測ノート")
                 df_report = load_sheet("秘伝の書")
                 past_report = df_report["レポート内容"].iloc[0] if not df_report.empty and "レポート内容" in df_report.columns else "データなし"
@@ -545,10 +561,15 @@ elif st.session_state.menu == "最終予測決定":
                         
                         prompt = f"""
                         今週蓄積された以下の「日報データ」と「秘伝の書」を分析してください。
-                        前提として、この日報データは【外部サイトの予測トレンドを統合し、強力な多様性フィルターを通して意図的に数字を分散させ、網羅的なバランスを確保して抽出された30口】です。特定の数字に偏っていません。
-                        二人の予想のシンクロや、地球の重力・潮回りが引き起こす全体の波（癖）を物理・統計・運命学の観点から考察し、「絶対に買うべき最強の10口（いつの実行日の、誰の予想の、何口目か）」を厳選し、その選定理由を論理的かつ情熱的に解説してください。監督は常に10口購入するルールのための決定です。絵文字は一切使用しないこと。
+                        前提として、この日報データは【外部サイトの予測トレンドを統合し、超・多様性フィルターとAIの勘（ゆらぎ）を通して意図的に数字を分散させ、多方面から攻め入るために抽出された30口】です。特定の数字に偏っていません。
+
+                        【絶対遵守の指令：AIの勘と死角の排除】
+                        1. 抽出する10口の最終数字（7個目の数字）が「34」などに一極集中するようなダサい真似は絶対にするな。30番台（31〜37）や29着地など、終盤の波を完璧に分散させ、あらゆる波を絡め取る「死角のない迎撃陣形」を組め。
+                        2. 過去の確率だけでなく、「大穴のコールドナンバー」「二人の直感のシンクロ」「重力状態の異質な波」といった見えない要素（AIの勘）を高く評価せよ。
+                        3. 「王道」「直感」「大穴」などの部隊編成を明確にし、多方面から攻め入る理由を論理的かつ情熱的に解説せよ。監督は常に10口購入するルールのための決定だ。絵文字は一切使用しないこと。
+                        
                         【秘伝の書】\n{past_report}
-                        【ご夫婦の蓄積データ（網羅的抽出済）】\n{ai_prompt}
+                        【ご夫婦の蓄積データ（超分散・網羅的抽出済）】\n{ai_prompt}
                         """
                         try:
                             model = genai.GenerativeModel('gemini-2.5-pro', system_instruction=MIYAHIRA_PROMPT)
