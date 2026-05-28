@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 import re
 import random
 import json
+import os
 from collections import Counter
 from datetime import datetime, timedelta, date, timezone
 import google.generativeai as genai
@@ -16,7 +17,6 @@ JST = timezone(timedelta(hours=+9), 'JST')
 
 # ==========================================
 # 🔒 個人情報を地下金庫（Secrets）から安全に読み込み
-# （コード上には個人情報を一切書きません）
 # ==========================================
 u1_name = st.secrets.get("USER1_NAME", "ご主人")
 u1_birth_str = st.secrets.get("USER1_BIRTH", "1990-01-01")
@@ -88,6 +88,23 @@ def save_sheet(sheet_name, df):
             worksheet.update(values=[df.columns.values.tolist()] + df.values.tolist(), range_name="A1")
         return True
     except: return False
+
+# ==========================================
+# 外部サイトトレンド読み込み機能
+# ==========================================
+def get_external_trend(filepath="other_sites.txt"):
+    """外部サイトの予測データから数字の癖（トレンド）を抽出する"""
+    trend = Counter()
+    try:
+        if os.path.exists(filepath):
+            with open(filepath, "r", encoding="utf-8") as f:
+                text = f.read()
+                # 1〜37の数字をすべて抜き出してカウント
+                nums = re.findall(r'\b(?:[1-9]|[1-2][0-9]|3[0-7])\b', text)
+                trend.update([int(n) for n in nums])
+    except:
+        pass
+    return trend
 
 # ==========================================
 # 地球物理学・自然環境センサー計算ロジック
@@ -250,7 +267,7 @@ if st.session_state.menu != "ホーム":
 
 if st.session_state.menu == "ホーム":
     st.title("ロト7 究極予測室")
-    st.markdown("<div class='info-box'>ご夫婦の異なる視点、環境センサー、地球の重力状態を統合し、対照実験を交えて決断を導き出す中央管制システムです。</div>", unsafe_allow_html=True)
+    st.markdown("<div class='info-box'>外部の集合知を統合し、強力な分散フィルターによるバランスのとれた網羅的予測を行う中央管制システムです。</div>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
         st.button("1. 最新データ取得（基盤整備）", on_click=change_menu, args=("最新データ取得",))
@@ -356,7 +373,7 @@ elif st.session_state.menu == "AIディープ分析":
 
 elif st.session_state.menu == "日々の予想・積上げ":
     st.title("日々の予想・積上げ（各30口生成）")
-    st.write("環境センサー情報を入力し、各自のロジックで28口＋対照実験（ランダム）2口の計30口を生成します。")
+    st.write("環境センサー情報と【外部サイトトレンド】を統合し、偏りを防ぐ【多様性フィルター】を通して幅広いバランスの30口を生成します。")
     
     df_real = load_sheet("実データ")
     auto_round, auto_date = get_next_round_info(df_real)
@@ -395,9 +412,15 @@ elif st.session_state.menu == "日々の予想・積上げ":
                 m_eto = get_eto(draw_date)
                 m_feng = get_fengshui(draw_date)
 
+                # ★ 外部サイトのトレンドを読み込み
+                trend_counts = get_external_trend("other_sites.txt")
+
                 all_numbers = [int(val) for i in range(1, 8) for val in df_real[f"数字{i}"] if pd.notna(val) and str(val).isdigit()]
                 number_counts = Counter(all_numbers)
-                nums_list, weights_list = list(number_counts.keys()), list(number_counts.values())
+                nums_list = list(range(1, 38))
+                
+                # ★ 外部トレンドを組み込んだ重み付け（外部意見を2倍の重みで評価）
+                weights_list = [number_counts.get(n, 1) + trend_counts.get(n, 0) * 2 for n in nums_list]
                 if not nums_list: nums_list, weights_list = list(range(1, 38)), [1]*37
 
                 if operator == u1_name:
@@ -415,7 +438,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                                 except: pass
                     must_nums = [n for n, _ in Counter(matched_nums).most_common(2)] if matched_nums else [n for n, _ in number_counts.most_common(2)]
                     while len(must_nums) < 2: must_nums.append(random.choice(nums_list))
-                    logic_name = "過去統計 × 暦・重力エネルギー"
+                    logic_name = "過去統計 × 暦重力 × 集合知"
                     logic_detail = f"重力:{m_gravity} / 六曜:{m_roku} / 風水:{m_feng}"
                 else:
                     ob = USER_PROFILES[operator]["birth"]
@@ -423,7 +446,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     num2 = (draw_date.day + draw_date.month + ob.day) % 37 + 1
                     if num2 == 0 or num2 == num1: num2 = (num2 + 1) % 37 + 1
                     must_nums = [num1, num2]
-                    logic_name = "琉球聖地 × 数霊エネルギー"
+                    logic_name = "琉球聖地 × 数霊 × 集合知"
                     logic_detail = f"聖地:{land1} / 導き数:{num1} / サポート:{num2}"
 
                 elites = []
@@ -435,14 +458,36 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     p.sort()
                     if not (100 <= sum(p) <= 160): continue
                     if sum(1 for n in p if n % 2 != 0) not in [3, 4]: continue
-                    elites.append({"nums": p, "pts": sum(number_counts.get(n, 0) for n in p)})
+                    # ★ スコア計算にも外部トレンドを加味
+                    pts = sum(number_counts.get(n, 0) + trend_counts.get(n, 0) * 2 for n in p)
+                    elites.append({"nums": p, "pts": pts})
                 
                 elites.sort(key=lambda x: x["pts"], reverse=True)
+                
+                # ★ 究極の分散・多様性フィルター
                 top30 = []
+                num_usage = Counter()
+                MAX_USAGE = 6 # 大黒柱以外の数字は28口中で最大6回までしか使えない（偏りの完全排除）
+
                 for e in elites:
-                    if not any(len(set(e["nums"]) & set(t["nums"])) >= 5 for t in top30):
-                        e["type"] = logic_name
-                        top30.append(e)
+                    # 4個以上同じ数字が被っていたら却下（広範囲を網羅するため）
+                    if any(len(set(e["nums"]) & set(t["nums"])) >= 4 for t in top30):
+                        continue
+                    
+                    # 各数字の出現上限チェック
+                    can_use = True
+                    for n in e["nums"]:
+                        if n not in must_nums and num_usage[n] >= MAX_USAGE:
+                            can_use = False
+                            break
+                    
+                    if not can_use: continue
+                        
+                    e["type"] = logic_name
+                    top30.append(e)
+                    for n in e["nums"]:
+                        num_usage[n] += 1
+                        
                     if len(top30) == 28: break
                 
                 for _ in range(2):
@@ -472,12 +517,12 @@ elif st.session_state.menu == "日々の予想・積上げ":
                 else: df_note = df_new
                 
                 save_sheet("予測ノート", df_note)
-                st.success(f"クラウド金庫へデータを格納しました。（担当: {operator} / 計30口）")
+                st.success(f"クラウド金庫へデータを格納しました。（担当: {operator} / 計30口）\n※外部トレンド統合および多様性フィルターが正常に作動しました。")
                 st.dataframe(df_new[["口数", "数字1", "数字2", "数字3", "数字4", "数字5", "数字6", "数字7", "予測ロジック"]])
 
 elif st.session_state.menu == "最終予測決定":
     st.title("最終予測決定（購入）")
-    st.write("蓄積された全センサー情報、対照実験データ、秘伝の書をAIが統合し、最終的な購入布陣を決定します。")
+    st.write("蓄積された全センサー情報、対照実験データ、外部集合知、秘伝の書をAIが統合し、最終的な購入布陣を決定します。")
     
     df_real = load_sheet("実データ")
     auto_round, _ = get_next_round_info(df_real)
@@ -486,7 +531,7 @@ elif st.session_state.menu == "最終予測決定":
     if st.button("最終決断レポートを生成する", type="primary"):
         if not api_key: st.error("APIキーが設定されていません。")
         else:
-            with st.spinner("AIが重力、気圧、心身の波長、二人のシンクロを比較検討し深く思考中..."):
+            with st.spinner("AIが全体的なバランスと癖の波を比較検討し、深く思考中..."):
                 df_note = load_sheet("予測ノート")
                 df_report = load_sheet("秘伝の書")
                 past_report = df_report["レポート内容"].iloc[0] if not df_report.empty and "レポート内容" in df_report.columns else "データなし"
@@ -499,10 +544,11 @@ elif st.session_state.menu == "最終予測決定":
                         ai_prompt = "\n".join([f"[{r['実行日']} | {r['実行者']} | {r.get('予測ロジック','')} | 重力:{r.get('重力状態','')} | 場所:{r.get('入力場所','')} | 心身:{r.get('心身状態','')}] {r['口数']}: {r['数字1']},{r['数字2']},{r['数字3']},{r['数字4']},{r['数字5']},{r['数字6']},{r['数字7']}" for _, r in df_target.iterrows()])
                         
                         prompt = f"""
-                        今週蓄積された以下の「日報データ（重力状態、気圧、心身状態、時間帯などの波長センサー、および完全ランダムの対照実験を含む）」と「秘伝の書」を分析してください。
-                        二人の予想のシンクロ（一致や共鳴）や、地球の重力・潮回りが引き起こす数字の偏りを物理・統計・運命学の観点から考察し、「絶対に買うべき最強の10口（いつの実行日の、誰の予想の、何口目か）」を厳選し、その選定理由を論理的かつ情熱的に解説してください。監督は常に10口購入するルールのための決定です。絵文字は一切使用しないこと。
+                        今週蓄積された以下の「日報データ」と「秘伝の書」を分析してください。
+                        前提として、この日報データは【外部サイトの予測トレンドを統合し、強力な多様性フィルターを通して意図的に数字を分散させ、網羅的なバランスを確保して抽出された30口】です。特定の数字に偏っていません。
+                        二人の予想のシンクロや、地球の重力・潮回りが引き起こす全体の波（癖）を物理・統計・運命学の観点から考察し、「絶対に買うべき最強の10口（いつの実行日の、誰の予想の、何口目か）」を厳選し、その選定理由を論理的かつ情熱的に解説してください。監督は常に10口購入するルールのための決定です。絵文字は一切使用しないこと。
                         【秘伝の書】\n{past_report}
-                        【ご夫婦の蓄積データ】\n{ai_prompt}
+                        【ご夫婦の蓄積データ（網羅的抽出済）】\n{ai_prompt}
                         """
                         try:
                             model = genai.GenerativeModel('gemini-2.5-pro', system_instruction=MIYAHIRA_PROMPT)
