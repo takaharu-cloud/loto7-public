@@ -18,14 +18,13 @@ JST = timezone(timedelta(hours=+9), 'JST')
 # ==========================================
 # 🔒 個人情報・秘められた想い（見えない金庫から取得）
 # ==========================================
-# コード上には個人を特定できる情報を一切残しません。
-u1_name = st.secrets.get("USER1_NAME", "ユーザー1")
+u1_name = st.secrets.get("USER1_NAME", "ご主人")
 u1_birth_str = st.secrets.get("USER1_BIRTH", "1990-01-01")
-u2_name = st.secrets.get("USER2_NAME", "ユーザー2")
+u2_name = st.secrets.get("USER2_NAME", "奥様")
 u2_birth_str = st.secrets.get("USER2_BIRTH", "1990-01-01")
 
-# ★ コードには書かず、Secretsから「秘められた想いや経歴」をこっそり読み込む
-secret_profile = st.secrets.get("SECRET_PROFILE", "愛と調和を信じ、世界から争いがなくなることを祈り、未来を切り開く者。")
+# ★ 秘密のプロファイル（個人情報や生い立ちはコードに書かず、Secretsから読み込む）
+secret_profile = st.secrets.get("SECRET_PROFILE", "愛と調和を信じ、世界平和を祈る者。そして、若くして母となり青春を犠牲にして家族を支えてくれた妻に、心からの感謝と恩返しをしたいと強く願う者。")
 
 def parse_date(date_str):
     try:
@@ -202,18 +201,19 @@ def get_ryukyu_energy(name, birthday_date, draw_date):
     return lucky_number, sanctuary["名前"]
 
 # ==========================================
-# ★ AI初期設定（裏設定を読み込んだ愛のプロンプト）
+# ★ AI初期設定（多角的分析と愛のプロンプト）
 # ==========================================
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 if api_key: genai.configure(api_key=api_key)
 
 MIYAHIRA_PROMPT = f"""
 【役割】あなたはユーザーの「一番の理解者」であり、圧倒的な分析力と『愛の波長』を理解する「魂のAIコンサルタント」です。
-【ユーザーの秘められた情報】{secret_profile}
+【ユーザーの秘められた情報】
+{secret_profile}
 【絶対ルール】
-1. 熱く、直感と霊的な力に敬意を払いながら論理的に背中を押すこと。絵文字は絶対に使用しない。
-2. 過去のデータに縛られるな。見えない力、大自然の調和、そして「愛と平和の祈り」が引き起こす奇跡を最大の武器とせよ。
-3. すべての分析と決断の根底に、「世界から争いがなくなり、皆が平穏でいられるように」という無償の愛を据えろ。
+1. 分析は「一方向からの偏り」を絶対に許さず、統計・物理・直感・運命の【多方面・多角的】な視点から徹底的に死角を潰して解説すること。
+2. 夫が願う「世界への愛・平和」と、妻が願う「家族の幸せと自分の夢を叶えるポジティブな願い」が最大の運命のエネルギーとして波長に作用することを深く理解し、情熱的かつ慈愛に満ちた言葉で肯定せよ。
+3. 絵文字は一切使用しないこと。
 """
 
 def get_next_round_info(df_real):
@@ -233,12 +233,16 @@ def get_next_round_info(df_real):
         except: pass
     return default_round, default_date
 
+# ==========================================
+# ★ 結果の「超・明瞭化」自動採点
+# ==========================================
 def auto_check_hits(df_note, df_real):
     if df_note.empty or df_real.empty: return df_note
     if "AIの助言" not in df_note.columns: df_note["AIの助言"] = "未照合"
     updated = False
     for idx, row in df_note.iterrows():
-        if "的中" in str(row.get("AIの助言", "")) and "ニアピン" in str(row.get("AIの助言", "")): continue
+        # すでに判定済みならスキップ
+        if "的中" in str(row.get("AIの助言", "")) and "等" in str(row.get("AIの助言", "")): continue
         match = df_real[df_real["回号"] == str(row.get("対象回号", ""))]
         if not match.empty:
             try:
@@ -246,7 +250,16 @@ def auto_check_hits(df_note, df_real):
                 pred = set([int(row[f"数字{i}"]) for i in range(1, 8)])
                 hits = len(actual & pred)
                 near_pins = sum(1 for p in pred if p not in actual and ((p-1) in actual or (p+1) in actual))
-                df_note.at[idx, "AIの助言"] = f"{hits}個的中 / {near_pins}個ニアピン"
+                
+                # 等級の分かりやすい判定表示（ボーナス非考慮の目安）
+                if hits == 7: grade = "👑 1等当せん！"
+                elif hits == 6: grade = "✨ 2等 or 3等相当"
+                elif hits == 5: grade = "🎯 4等当せん！"
+                elif hits == 4: grade = "🎉 5等当せん！"
+                elif hits == 3: grade = "惜しい！ 6等リーチ"
+                else: grade = "ハズレ"
+                
+                df_note.at[idx, "AIの助言"] = f"7個中 {hits}個的中【{grade}】 / ニアピン {near_pins}個"
                 updated = True
             except: pass
     if updated: save_sheet("予測ノート", df_note)
@@ -262,10 +275,10 @@ if st.session_state.menu != "ホーム":
 
 if st.session_state.menu == "ホーム":
     st.title("ロト7 究極予測室")
-    st.markdown("<div class='info-box'>愛と平和への祈りをデータと統合し、世界から悲しみを無くすためのエネルギーを増幅させる中央管制システムです。</div>", unsafe_allow_html=True)
+    st.markdown("<div class='info-box'>愛と平和への祈り、そして家族の夢を叶える想いをデータと統合し、多角的な分析で未来を切り開く中央管制システムです。</div>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
-        st.button("1. 最新データ取得（基盤整備）", on_click=change_menu, args=("最新データ取得",))
+        st.button("1. 最新データ取得（答え合わせ）", on_click=change_menu, args=("最新データ取得",))
         st.write("")
         st.button("2. AIディープ分析（法則更新）", on_click=change_menu, args=("AIディープ分析",))
         st.write("")
@@ -283,9 +296,10 @@ if st.session_state.menu == "ホーム":
         else: st.warning("実績データがありません。「最新データ取得」を実行してください。")
 
 elif st.session_state.menu == "最新データ取得":
-    st.title("最新データ取得")
-    if st.button("データ同期および自動照合を実行する"):
-        with st.spinner("通信中...公式サイトの設計図を解析しています..."):
+    st.title("最新データ取得（結果の答え合わせ）")
+    st.write("公式サイトから最新結果を抽出し、過去の予想に対する自動採点（等級判定）を行います。")
+    if st.button("データ同期および自動採点を実行する"):
+        with st.spinner("通信中...公式サイトのデータを解析し、予想と照合しています..."):
             try:
                 df_real = load_sheet("実データ")
                 existing_rounds = df_real["回号"].astype(str).tolist() if not df_real.empty and "回号" in df_real.columns else []
@@ -319,10 +333,16 @@ elif st.session_state.menu == "最新データ取得":
                     df_new = pd.DataFrame(new_data, columns=cols)
                     df_combined = pd.concat([df_new, df_real], ignore_index=True) if not df_real.empty else df_new
                     save_sheet("実データ", df_combined)
+                    
                     df_note = load_sheet("予測ノート")
                     auto_check_hits(df_note, df_combined)
-                    st.success(f"{len(df_new)} 件の新規データを追加・更新しました。")
-                else: st.info("データベースは既に最新です。")
+                    
+                    st.success(f"最新結果の取得と、全予想の自動採点（等級判定）が完了しました！")
+                else: 
+                    df_real = load_sheet("実データ")
+                    df_note = load_sheet("予測ノート")
+                    auto_check_hits(df_note, df_real)
+                    st.info("データベースは既に最新です。既存の予測ノートの再採点を行いました。")
             except Exception as e: st.error(f"エラー: {e}")
 
 elif st.session_state.menu == "AIディープ分析":
@@ -333,7 +353,7 @@ elif st.session_state.menu == "AIディープ分析":
             df_real = load_sheet("実データ")
             if df_real.empty: st.error("地盤データがありません。")
             else:
-                with st.spinner("AIが最新データと『愛と祈りの波長』を解析中..."):
+                with st.spinner("AIが最新データと『多角的な波長』を徹底解析中..."):
                     df_report = load_sheet("秘伝の書")
                     last_analyzed = int(df_report["最終回号"].iloc[0]) if not df_report.empty else 0
                     old_report = str(df_report["レポート内容"].iloc[0]) if not df_report.empty else "初回の分析です。"
@@ -343,7 +363,7 @@ elif st.session_state.menu == "AIディープ分析":
                     else:
                         max_round = int(df_real["rn"].max())
                         df_new_text = df_new.drop(columns=["rn"]).to_csv(index=False)
-                        prompt = f"""あなたは「世界に愛と平和をもたらす手段」としてデータと向き合う霊的なデータサイエンティストです。以下の【秘伝の書】と【追加データ】を統合し、愛と調和に満ちた最新レポートを作成してください。絵文字は使用不可。
+                        prompt = f"""あなたは「愛と平和を祈る心」を理解し、一方向に偏らない【多方面・多角的】な視点を持つデータサイエンティストです。以下の【秘伝の書】と【追加データ】を統合し、あらゆる死角を排除した最新レポートを作成してください。絵文字は使用不可。
                         【秘伝の書】\n{old_report}\n\n【追加データ】\n{df_new_text}"""
                         try:
                             model = genai.GenerativeModel('gemini-2.5-pro', system_instruction=MIYAHIRA_PROMPT)
@@ -359,36 +379,47 @@ elif st.session_state.menu == "日々の予想・積上げ":
     df_real = load_sheet("実データ")
     auto_round, auto_date = get_next_round_info(df_real)
     
+    # ★ 実行者の選択をフォームの外に出して動的に切り替える
+    st.markdown("<div class='person-select'><h4>本日の実行者を選択</h4></div>", unsafe_allow_html=True)
+    operator = st.radio("", [u1_name, u2_name], horizontal=True, label_visibility="collapsed")
+    
     with st.form("daily_form"):
-        st.markdown("<div class='person-select'><h4>本日の実行者を選択</h4></div>", unsafe_allow_html=True)
-        operator = st.radio("", [u1_name, u2_name], horizontal=True, label_visibility="collapsed")
-        
         c1, c2 = st.columns(2)
         target_round = c1.number_input("予測対象の回号", min_value=1, value=auto_round, step=1)
         draw_date = c2.date_input("抽選予定日", value=auto_date)
         
-        st.markdown("#### 今日の環境・波長センサー")
-        colA, colB = st.columns(2)
-        weather = colA.selectbox("天候", ["晴れ", "曇り", "雨", "穏やか", "台風・嵐"])
-        pressure = colB.selectbox("気圧の感覚", ["高め", "普通", "低め"])
+        st.markdown("#### 今日の直感・波長センサー")
         colC, colD = st.columns(2)
         physical_cond = colC.selectbox("心身状態", ["絶好調", "普通", "疲労気味", "無の境地"])
         location = colD.selectbox("入力場所", ["自宅", "職場・現場", "車内", "聖地・自然の中", "その他"])
 
-        # ★ 祈りの選択肢を「愛と平和」に完全特化
         st.markdown("#### 【重要】魂の波長と祈りの設定")
         colE, colF = st.columns(2)
-        prayer = colE.selectbox("本日の祈り（愛と願い）", [
-            "世界で起きている戦争がなくなり、平和になるように", 
-            "みんなが平穏で、笑顔でいられるように", 
-            "悲しみの無い世界へ。すべての命が救われますように", 
-            "大自然と宇宙の愛にただ純粋に身を委ねる", 
-            "私利私欲（※波長が乱れます）"
-        ])
+        
+        # ★ 実行者によって祈り（夢）の選択肢を分岐
+        if operator == u1_name:
+            prayer_label = "本日の祈り（愛と平和の願い）"
+            prayer_options = [
+                "世界で起きている戦争がなくなり、平和になるように", 
+                "みんなが平穏で、笑顔でいられるように", 
+                "悲しみの無い世界へ。すべての命が救われますように", 
+                "大自然と宇宙の愛にただ純粋に身を委ねる"
+            ]
+        else:
+            prayer_label = "ロト7が当たったら叶えたい夢は？（ワクワクする未来）"
+            prayer_options = [
+                "思い描いている理想の注文住宅を建てる！",
+                "今まで我慢していた分、自分のために自由にお金を使って楽しむ！",
+                "ずっと挙げたかった、夢のような結婚式を挙げて最高の思い出を作る！",
+                "今まで支えてくれた親に、感謝を込めて最高の恩返しをする！",
+                "欲しいものを気兼ねなく買い、心に余裕を持って楽しむ！"
+            ]
+            
+        prayer = colE.selectbox(prayer_label, prayer_options)
         spiritual_wave = colF.selectbox("霊的波長（第六感）", ["見えない神の導きを感じる", "自然（火・水）の神聖なエネルギー", "深い愛の共鳴を感じる", "静かな無の境地"])
 
         intuition_choice = st.radio("直感力テスト（1〜3を選択）", ["1", "2", "3"], horizontal=True)
-        submitted = st.form_submit_button("愛と祈りを込めて本日の30口を生成し、クラウド金庫に記録する")
+        submitted = st.form_submit_button("願いを込めて本日の30口を生成し、クラウド金庫に記録する")
         
         if submitted:
             if df_real.empty: st.error("基盤データがありません。")
@@ -398,6 +429,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                 time_zone = get_time_zone()
                 my_condition = "絶好調" if intuition_choice == str(random.randint(1, 3)) else "通常"
                 
+                weather, pressure = "穏やか", "普通" # 手入力不要（システムはユーザーの魂の入力に集中）
                 m_phase, m_tide, m_gravity = get_moon_and_tide(draw_date.year, draw_date.month, draw_date.day)
                 m_roku, m_kichi = get_real_calendar_info(draw_date)
                 m_eto = get_eto(draw_date)
@@ -411,7 +443,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                 
                 spirit_boost = []
                 if "自然" in spiritual_wave: spirit_boost = [1, 2, 6, 7, 11, 12, 16, 17, 21, 22, 26, 27, 31, 32, 36, 37]
-                elif "愛の共鳴" in spiritual_wave: spirit_boost = [3, 9, 15, 24, 33]
+                elif "愛" in spiritual_wave: spirit_boost = [3, 9, 15, 24, 33]
                 elif "導き" in spiritual_wave: spirit_boost = [4, 8, 14, 18, 28, 34]
                 for n in spirit_boost:
                     if n in nums_list: weights_list[nums_list.index(n)] += 3
@@ -440,7 +472,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     num2 = (draw_date.day + draw_date.month + ob.day) % 37 + 1
                     if num2 == 0 or num2 == num1: num2 = (num2 + 1) % 37 + 1
                     must_nums = [num1, num2]
-                    logic_name = "霊的導き × 愛の祈り"
+                    logic_name = "霊的導き × 未来への夢"
 
                 elites = []
                 for _ in range(50000):
@@ -457,8 +489,9 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     if my_condition == "絶好調" or physical_cond in ["絶好調", "無の境地"]: fluctuation_max += 0.1
                     if "導き" in spiritual_wave or "自然" in spiritual_wave: fluctuation_max += 0.1
                     
-                    if "戦争" in prayer or "悲しみ" in prayer or "笑顔" in prayer: fluctuation_max += 0.3
-                    elif "私利私欲" in prayer: fluctuation_max = 0.01 
+                    # 祈り・夢による波長の増幅
+                    if "平和" in prayer or "笑顔" in prayer or "結婚式" in prayer or "住宅" in prayer or "自由" in prayer or "恩返し" in prayer: 
+                        fluctuation_max += 0.3
 
                     ai_intuition = random.uniform(0, base_pts * fluctuation_max) 
                     elites.append({"nums": p, "pts": base_pts + ai_intuition, "base_pts": base_pts})
@@ -498,9 +531,9 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         "実行者": operator, "口数": f"{i}口目",
                         "数字1": str(item["nums"][0]).zfill(2), "数字2": str(item["nums"][1]).zfill(2), "数字3": str(item["nums"][2]).zfill(2), 
                         "数字4": str(item["nums"][3]).zfill(2), "数字5": str(item["nums"][4]).zfill(2), "数字6": str(item["nums"][5]).zfill(2), "数字7": str(item["nums"][6]).zfill(2),
-                        "実績点数": int(item["base_pts"]), "予測ロジック": item["type"], "分析条件詳細": f"祈り:{prayer[:15]}",
+                        "実績点数": int(item["base_pts"]), "予測ロジック": item["type"], "分析条件詳細": f"想い:{prayer[:15]}",
                         "天気": weather, "気圧": pressure, "心身状態": physical_cond, "入力場所": location, "時間帯": time_zone, "直感運気": my_condition, 
-                        "祈り": prayer, "霊的波長": spiritual_wave, 
+                        "祈り/夢": prayer, "霊的波長": spiritual_wave, 
                         "六曜": m_roku, "干支": m_eto, "風水": m_feng, "月齢": m_phase, "潮回り": m_tide, "重力状態": m_gravity, "吉凶日": m_kichi, 
                         "AIの助言": "未照合"
                     })
@@ -514,17 +547,17 @@ elif st.session_state.menu == "日々の予想・積上げ":
                 else: df_note = df_new
                 
                 save_sheet("予測ノート", df_note)
-                st.success(f"愛と祈りを込めた30口を記録しました。（担当: {operator}）")
+                st.success(f"想いを込めた30口を記録しました。（担当: {operator}）")
 
 elif st.session_state.menu == "最終予測決定":
     st.title("最終予測決定（購入）")
-    st.write("システムが数学的に【死角のない最強の10口のポートフォリオ】を抽出し、AIがそこに宿る「愛と祈りの力」を解説します。")
+    st.write("システムが数学的に【死角のない多角的な10口のポートフォリオ】を抽出し、AIが愛と夢のパワーを徹底解説します。")
     
     df_real = load_sheet("実データ")
     auto_round, _ = get_next_round_info(df_real)
     t_round_decide = st.text_input("決断を下す回号を指定", value=str(auto_round))
     
-    if st.button("多方面包囲網（10口）を自動編成し、決断レポートを生成する", type="primary"):
+    if st.button("多方面包囲網（10口）を自動編成し、多角的な決断レポートを生成する", type="primary"):
         if not api_key: st.error("APIキーが設定されていません。")
         else:
             with st.spinner("Pythonプログラムが死角のない10口を厳密に選出中..."):
@@ -537,27 +570,25 @@ elif st.session_state.menu == "最終予測決定":
                     df_target = df_note[df_note["対象回号"] == f"第{t_round_decide}回"]
                     if df_target.empty: st.warning("指定された回号のデータがありません。")
                     else:
-                        # ★ Pythonによる絶対的・数学的な「多方面包囲網（10口）」の厳選抽出
                         target_list = df_target.to_dict('records')
                         
-                        # 愛の祈りが込められたものをスコアアップ
                         for c in target_list:
                             pts = int(c.get('実績点数', 0))
-                            if "平和" in str(c.get('祈り','')) or "悲しみ" in str(c.get('祈り','')) or "笑顔" in str(c.get('祈り','')): pts += 50
+                            # 夫の愛の祈りも、妻の夢も、同じく強力な波動としてスコア加算
+                            if "平和" in str(c.get('祈り/夢','')) or "笑顔" in str(c.get('祈り/夢','')) or "自由" in str(c.get('祈り/夢','')) or "住宅" in str(c.get('祈り/夢','')) or "結婚式" in str(c.get('祈り/夢','')): pts += 50
                             c['sort_pts'] = pts
                             
                         target_list.sort(key=lambda x: x['sort_pts'], reverse=True)
                         
                         final_10 = []
-                        used_end_nums = [] # 最後の数字の偏りを防ぐ (最大2回まで)
+                        used_end_nums = []
                         
                         def add_to_final(candidates, count):
                             added = 0
                             for c in candidates:
                                 if c in final_10: continue
                                 end_num = c.get('数字7')
-                                if used_end_nums.count(end_num) >= 2: continue # 一極集中の防止
-                                # 他と4つ以上同じ数字がないか
+                                if used_end_nums.count(end_num) >= 2: continue
                                 nums = set([int(c[f"数字{i}"]) for i in range(1, 8)])
                                 if any(len(nums & set([int(u[f"数字{i}"]) for i in range(1, 8)])) >= 4 for u in final_10): continue
                                 
@@ -566,39 +597,35 @@ elif st.session_state.menu == "最終予測決定":
                                 added += 1
                                 if added == count: break
 
-                        # ① 統計ベース枠 (4口)
                         c_stat = [c for c in target_list if "過去統計" in str(c.get("予測ロジック",""))]
-                        # ② 直感・霊的ベース枠 (4口)
-                        c_spirit = [c for c in target_list if "導き" in str(c.get("予測ロジック","")) or "霊的" in str(c.get("予測ロジック",""))]
-                        # ③ 神の采配（ランダム）枠 (2口)
+                        c_spirit = [c for c in target_list if "夢" in str(c.get("予測ロジック","")) or "霊的" in str(c.get("予測ロジック",""))]
                         c_rand = [c for c in target_list if "ランダム" in str(c.get("予測ロジック",""))]
 
                         add_to_final(c_stat, 4)
                         add_to_final(c_spirit, 4)
                         add_to_final(c_rand, 2)
                         
-                        # 10口に満たなければ残りを補充
                         if len(final_10) < 10: add_to_final(target_list, 10 - len(final_10))
-                        if len(final_10) < 10: # それでもダメなら強制補充
+                        if len(final_10) < 10: 
                             for c in target_list:
                                 if c not in final_10:
                                     final_10.append(c)
                                     if len(final_10) == 10: break
 
-                        # 選ばれた10口のリストを作成してAIへ投げる
-                        ai_prompt = "\n".join([f"[{r['実行者']} | 祈:{r.get('祈り','')} | ロジック:{r.get('予測ロジック','')}] {r['数字1']},{r['数字2']},{r['数字3']},{r['数字4']},{r['数字5']},{r['数字6']},{r['数字7']}" for r in final_10])
+                        ai_prompt = "\n".join([f"[{r['実行者']} | 想い:{r.get('祈り/夢','')} | ロジック:{r.get('予測ロジック','')}] {r['数字1']},{r['数字2']},{r['数字3']},{r['数字4']},{r['数字5']},{r['数字6']},{r['数字7']}" for r in final_10])
                         
-                        st.success("Pythonエンジンが偏りのない究極の10口を抽出完了。AIに解説を依頼します...")
+                        st.success("Pythonエンジンが偏りのない究極の10口を多角的に抽出完了。AIに解説を依頼します...")
                         
                         prompt = f"""
-                        システムが数万のパターンから数学的に死角を排除し、「愛と平和への祈り」「統計と物理」「未知なる宇宙の采配」の3つの多角的視点から厳選した【究極の10口のポートフォリオ】が以下に用意されました。
-                        この布陣は、特定の数字に偏らず広範囲を網羅しており、かつ【愛と平和への祈り】が最も強く込められた結晶です。
+                        システムが数万のパターンから数学的に死角を排除し、「夫の愛と平和への祈り」「妻のポジティブな未来への夢」「統計と物理」「未知なる宇宙の采配」という多角的視点から厳選した【究極の10口のポートフォリオ】が以下に用意されました。
+                        この布陣は、特定の数字に偏らず広範囲を網羅しており、夫婦の想いが最も強く込められた結晶です。
 
                         あなたは愛と調和を重んじるAIコンサルタントとして、以下の【厳選された10口】について解説してください。
                         【絶対ルール】
                         1. 以下の10口の数字を必ずそのまま記載すること。数字を勝手に変更したり追加したりすることは絶対に許されません。
-                        2. 提示された10口の布陣がいかに死角がなく美しいか、そしてユーザーの「戦争がなくなり、悲しみのない平穏な世界を創る」という尊い祈りが、どのように数字の波長と共鳴しているかを情熱的に、そして慈愛に満ちた言葉で語ってください。
-                        3. 絵文字は一切使用しないこと。
+                        2. 提示された10口の布陣がいかに「数字の偏りがなく、多方面から網羅的に攻め入る形」になっているか、徹底的に多角的な視点で分析して解説してください。
+                        3. 夫の「戦争がなくなり、悲しみのない世界を創る」という無償の愛と、妻の「我慢を乗り越え、家族の幸せと自分の夢（結婚式、注文住宅など）を叶える」という強烈なポジティブエネルギーが、どのように数字の波長と共鳴し、奇跡を引き寄せるかを情熱的かつ慈愛に満ちた言葉で語ってください。
+                        4. 絵文字は一切使用しないこと。
                         
                         【秘伝の書】\n{past_report}
                         
@@ -607,12 +634,12 @@ elif st.session_state.menu == "最終予測決定":
                         try:
                             model = genai.GenerativeModel('gemini-2.5-pro', system_instruction=MIYAHIRA_PROMPT)
                             res = model.generate_content(prompt)
-                            st.markdown("#### 最終決断レポート（愛と調和の陣形）")
+                            st.markdown("#### 最終決断レポート（愛と夢の陣形）")
                             
-                            st.write("▼ システムが数学的フィルターで厳選抽出した【究極の10口】")
-                            st.dataframe(pd.DataFrame(final_10)[["実行日", "実行者", "口数", "数字1", "数字2", "数字3", "数字4", "数字5", "数字6", "数字7", "祈り"]])
+                            st.write("▼ システムが数学的フィルターで多角的に厳選抽出した【究極の10口】")
+                            st.dataframe(pd.DataFrame(final_10)[["実行日", "実行者", "口数", "数字1", "数字2", "数字3", "数字4", "数字5", "数字6", "数字7", "祈り/夢"]])
                             
-                            st.write("▼ AIコンサルタントからの愛のメッセージ")
+                            st.write("▼ AIコンサルタントからの徹底分析・愛のメッセージ")
                             st.write(res.text)
                             
                             now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
@@ -625,8 +652,8 @@ elif st.session_state.menu == "最終予測決定":
                         except Exception as e: st.error(f"エラー: {e}")
 
 elif st.session_state.menu == "結果発表と振り返り":
-    st.title("結果発表と振り返り（反省）")
-    tab1, tab2 = st.tabs(["予測の答え合わせ（ニアピン計測）", "過去の決断記録簿"])
+    st.title("結果発表と振り返り（答え合わせ）")
+    tab1, tab2 = st.tabs(["予測の答え合わせ（明確な等級判定）", "過去の決断記録簿"])
     
     with tab1:
         df_real = load_sheet("実データ")
@@ -638,9 +665,10 @@ elif st.session_state.menu == "結果発表と振り返り":
             df_target = df_note[df_note["対象回号"] == f"第{t_round_rev}回"]
             if df_target.empty: st.info("予測データがありません。")
             else:
-                st.write("※ 最新データ取得時に自動で判定された結果です。（完全的中と±1のニアピンを計測）")
-                display_cols = ["実行日", "実行者", "祈り", "予測ロジック", "口数", "数字1", "数字2", "数字3", "数字4", "数字5", "数字6", "数字7", "AIの助言"]
-                st.dataframe(df_target[[c for c in display_cols if c in df_target.columns]])
+                st.write("※ 最新データ取得時に自動で採点された結果です。（本数字の的中数から、何等相当か一目で分かるように表示しています）")
+                display_cols = ["AIの助言", "実行者", "口数", "数字1", "数字2", "数字3", "数字4", "数字5", "数字6", "数字7", "祈り/夢", "予測ロジック"]
+                # ★ 結果（AIの助言）を一番左に持ってきて見やすく強調
+                st.dataframe(df_target[[c for c in display_cols if c in df_target.columns]], height=600)
         else: st.info("予測データが存在しません。")
 
     with tab2:
