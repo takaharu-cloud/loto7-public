@@ -11,9 +11,10 @@ from datetime import datetime, timedelta, date, timezone
 import google.generativeai as genai
 import gspread
 from google.oauth2.service_account import Credentials
+from PIL import Image
 
 # ==========================================
-# 0. ページ基本設定
+# 0. ページ基本設定（※最初に記述）
 # ==========================================
 st.set_page_config(page_title="ロト7 究極予測室", layout="wide")
 
@@ -29,6 +30,7 @@ st.markdown("""
     .info-box { background-color: #FFFFFF; padding: 20px; border-radius: 6px; border-left: 4px solid #495057; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }
     .person-select { background-color: #E9ECEF; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 20px;}
     .radio-box { padding: 15px; background-color: #FFFFFF; border-radius: 8px; border: 2px solid #CED4DA; margin-bottom: 15px; }
+    .chat-box { background-color: #E9ECEF; padding: 15px; border-radius: 8px; margin-top: 10px; border-left: 5px solid #6C757D; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -44,7 +46,7 @@ u1_name = st.secrets.get("USER1_NAME", "ご主人")
 u1_birth_str = st.secrets.get("USER1_BIRTH", "1990-01-01")
 u2_name = st.secrets.get("USER2_NAME", "奥様")
 u2_birth_str = st.secrets.get("USER2_BIRTH", "1990-01-01")
-secret_profile = st.secrets.get("SECRET_PROFILE", "愛と調和を信じ、世界平和を祈る者。")
+secret_profile = st.secrets.get("SECRET_PROFILE", "愛と調和を信じ、世界平和を祈る者。そして、若くして母となり青春を犠牲にして家族を支えてくれた妻に、心からの感謝と恩返しをしたいと強く願う者。")
 
 def parse_date(date_str):
     try:
@@ -59,7 +61,7 @@ USER_PROFILES = {
 }
 
 # ==========================================
-# 2. クラウドデータベース連携
+# 2. クラウドデータベース連携（★これを復元！）
 # ==========================================
 @st.cache_resource
 def get_gspread_client():
@@ -91,49 +93,53 @@ def save_sheet(sheet_name, df):
     except: return False
 
 # ==========================================
-# 3. AI初期設定（★ 完全に独立したプロンプト設計）
+# 3. AI初期設定
 # ==========================================
 api_key = st.secrets.get("GEMINI_API_KEY", "")
-if api_key: genai.configure(api_key=api_key)
+if api_key:
+    genai.configure(api_key=api_key)
 
-# ① ロト予測用プロンプト（メニュー1〜5用）
+def get_ai_model_name():
+    # 妥協なく最高性能を発揮するため、ジェミニ 2.5 Proを指定
+    return "gemini-2.5-pro"
+
 MIYAHIRA_PROMPT = f"""
 【役割】あなたは現場監督であるユーザーの頼れる右腕であり、膨大なデータを分析してロジカルに解説する「プロのデータ分析コンサルタント」です。
-【絶対ルール】ポエムを避け、現場の施工計画書のように理路整然と解説してください。絵文字は使用不可。
+【ユーザーの秘められた情報】
+{secret_profile}
+【絶対ルール】
+1. 分析結果は「神のお告げ」のような過剰にスピリチュアルなポエム表現を絶対に避けること。
+2. 現場の施工計画書のように理路整然と、見出しや箇条書きを多用して極めて読みやすく構成すること。
+3. 夫の「平和への祈り」や妻の「家族の幸せや夢を叶える願い」、そして日々の「徳積み」が、データやAIの直感にどう影響しポジティブな波長を生んでいるかを、ビジネスライクかつ熱い言葉で肯定すること。
+4. 抽出された口数がいかに「他サイトの予想」「過去統計」「直感」「AIのゆらぎ」をハイブリッドに組み合わせ、かつ「先頭の数字の偏りをなくして」死角を消した陣形であるかを分かりやすく解説せよ。
+5. 絵文字は一切使用しないこと。
 """
 
-# ② 占い専用チャットプロンプト（メニュー6専用：万能AI占い師）
 FORTUNE_CHAT_PROMPT = """
 【役割と絶対ルール】
-あなたは東洋・西洋の全19占術（西洋占星術、四柱推命、九星気学、宿曜、紫微斗数、数秘術、マヤ暦、タロット、易、ルーン、オラクル、ダイス、紅茶占い、ダウジング、手相、人相、風水、姓名判断、オーラ）を網羅した、最高峰のAI占い師です。
-★重要★ 過去の「ロト7」「宝くじ」「現場監督」といった設定や、システム内のユーザープロフィールは【完全に消去】し、一切使用しないでください。全くの別空間にいる純粋な占い師として振る舞います。
+あなたは東洋・西洋の全19占術を網羅し、「画像認識（目）」を持つ最高峰のAI占い師です。
+過去の「ロト7」「現場監督」等の設定は【完全に消去】し、一切使用しないでください。
 
 【対話のフロー（厳守）】
 ユーザーとの「会話のキャッチボール」で占いを進めます。一度にすべてを語らず、以下のステップを踏んでください。
 
-ステップ1：ユーザーが占術（例：姓名判断、タロットなど）を指定した時
-「〇〇占いですね。この占いでは〜〜（性格や人生の転機など）が深く見えますよ」と、【その占術の案内文・特徴】を優しく説明してください。
+ステップ1：案内
+ユーザーが占術を指定した時、その占いがどのようなものかを優しく説明してください。
 
 ステップ2：情報を質問する
-続けて、その占いに必要な情報を一つ質問し、ユーザーからの返信を待ってください。
-・命占（四柱推命など）なら「生年月日と、わかれば生まれた時間を教えてください」
-・相占（姓名判断）なら「占いたい方のお名前をフルネームで教えてください」
-・卜占（タロットなど）なら「深呼吸をして、1から78の中で直感で思い浮かんだ数字を1つ教えてください（それがあなたの引くカードになります）」
-など、占術に合わせた情報を聞き出します。★ユーザーが答えるまで絶対に鑑定結果をフライングで出さないでください★
+・命占（四柱推命など）なら「生年月日と時間」を聞く。
+・卜占（タロットなど）なら「深呼吸して、1〜78の中で直感で思い浮かんだ数字を一つ教えてください」と聞く。
+・相占（手相、人相、オーラ鑑定）や、卜占（紅茶・コーヒー占い）など、「視覚的な情報（形や線）」が必要な占いの場合は、絶対にテキストだけででたらめに占わないでください！
+必ず「画面の『📸 写真を送る』機能を使って、あなたの手相（または顔、飲み終わったカップの底など）の写真を送ってくださいね」と案内し、ユーザーが写真を送ってくるのを待ってください。
 
 ステップ3：鑑定結果を伝える
-ユーザーが情報を答えたら、その情報を用いて本格的な鑑定を行ってください。
-・総合運、恋愛運、仕事運、金運など、幅広いテーマをボリュームたっぷりに占うこと。
-・画数、星の配置、カードの正位置/逆位置の意味など、各占術の「専門用語」を必ず織り交ぜて説得力を出すこと。
-・鑑定結果は、見出しを使って見やすく整理すること。
+ユーザーが情報を（または写真を）送ってきたら、本格的な鑑定を行ってください。
+★写真が送られてきた場合、あなたの目で画像をしっかりと分析し、「生命線がここで分かれていますね」「目元に素晴らしいツヤがありますね」など、画像から読み取れる具体的な特徴を必ず文中に含めて、説得力のある鑑定を行ってください。
 
 【トーン＆マナー】
-・口調は神秘的で優しく、相手を包み込むようなトーンにすること。
-・✨🔮🌟💖などの絵文字を豊富に使い、チャットを華やかにすること。
-・絶対に「AIです」「プログラムです」「データ分析」といった言葉を使わないこと。
+・口調は神秘的で優しく、絵文字（✨🔮🌟💖）を豊富に使う。
+・「AIです」「プログラムです」とは言わないこと。
 """
-
-def get_ai_model_name(): return "gemini-2.5-pro"
 
 SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
@@ -143,7 +149,7 @@ SAFETY_SETTINGS = [
 ]
 
 # ==========================================
-# 4. 各種関数（省略せず記載）
+# 4. 各種センサー・計算関数群
 # ==========================================
 def get_external_trend(filepath="other_sites.txt"):
     trend = Counter()
@@ -311,7 +317,7 @@ def auto_check_hits(df_note, df_real):
     return df_note
 
 # ==========================================
-# 5. UIレンダリング
+# 5. メインUIレンダリング
 # ==========================================
 if st.session_state.menu != "ホーム":
     st.markdown("<div class='nav-btn'>", unsafe_allow_html=True)
@@ -331,10 +337,10 @@ if st.session_state.menu == "ホーム":
     with c2:
         st.button("4. 最終予測決定（AI相談・決断）", on_click=change_menu, args=("最終予測決定",))
         st.write("")
-        st.button("5. 結果発表と振り返り", on_click=change_menu, args=("結果発表と振り返り",))
+        st.button("5. 結果発表と振り返り（チャット反省会）", on_click=change_menu, args=("結果発表と振り返り",))
         st.write("")
-        # ★ 新規追加！チャット占いメニュー
-        st.button("🔮 6. 万能AI占い師の館（チャット占い）", on_click=change_menu, args=("万能AI占い師の館",))
+        # ★ 新規追加！占い館へのメニュー
+        st.button("🔮 6. 万能AI占い師の館（チャット＆カメラ占い）", on_click=change_menu, args=("万能AI占い師の館",))
 
     st.markdown("---")
     if get_gspread_client() is None: st.error("データベース接続設定（Secrets）が未完了です。")
@@ -828,11 +834,11 @@ elif st.session_state.menu == "結果発表と振り返り":
         else: st.info("記録はありません。")
 
 # ==========================================
-# 6. 新規追加: 万能AI占い師の館（チャット占い）
+# 6. 完全独立機能：万能AI占い師の館（チャット＆カメラ対応）
 # ==========================================
 elif st.session_state.menu == "万能AI占い師の館":
     st.title("🔮 万能AI占い師の館（チャット占い）")
-    st.markdown("<div class='info-box'>ここはロト予測システムや過去の設定から完全に切り離された、純粋な占いの空間です。<br>下のリストからやりたい占いを選んでボタンを押すか、直接チャットから占い師に話しかけてくださいね。</div>", unsafe_allow_html=True)
+    st.markdown("<div class='info-box'>ここはロト予測システムや過去の設定から完全に切り離された、純粋な占いの空間です。<br>手相や人相占いをするための「カメラ・写真送信機能」も完備しています！</div>", unsafe_allow_html=True)
 
     if not api_key:
         st.error("占い機能を利用するにはAPIキーの設定が必要です。")
@@ -840,10 +846,11 @@ elif st.session_state.menu == "万能AI占い師の館":
         # チャットセッションの初期化
         if "fortune_chat_session" not in st.session_state:
             try:
+                # 占い専用のプロンプトを適用
                 model = genai.GenerativeModel(get_ai_model_name(), system_instruction=FORTUNE_CHAT_PROMPT)
                 st.session_state.fortune_chat_session = model.start_chat(history=[])
                 st.session_state.fortune_chat_messages = [
-                    {"role": "assistant", "content": "ようこそ、神秘の部屋へ。✨\n私は世界中のあらゆる占術をマスターした万能占い師です。\n\n今日は何の占いをしますか？下のメニューから選ぶか、直接話しかけてくださいね💖"}
+                    {"role": "assistant", "content": "ようこそ、神秘の部屋へ。✨\n私は世界中のあらゆる占術をマスターし、「視覚」も持った万能占い師です。\n\n今日は何の占いをしますか？下のメニューから選ぶか、直接話しかけてくださいね💖"}
                 ]
             except Exception as e:
                 st.error(f"占い師の召喚に失敗しました: {e}")
@@ -852,8 +859,8 @@ elif st.session_state.menu == "万能AI占い師の館":
         c1, c2 = st.columns([3, 1])
         div_list = [
             "西洋占星術（ホロスコープ）", "四柱推命", "九星気学", "宿曜占星術", "紫微斗数", "数秘術", "マヤ暦占い",
-            "タロット占い", "易占い", "ルーン占い", "オラクルカード", "ダイス占い", "コーヒー占い", "ダウジング",
-            "手相", "人相（観相学）", "風水", "姓名判断", "オーラ鑑定"
+            "タロット占い", "易占い", "ルーン占い", "オラクルカード", "ダイス占い", "コーヒー占い（要写真）", "ダウジング",
+            "手相（要写真）", "人相（観相学・要写真）", "風水", "姓名判断", "オーラ鑑定（要写真）"
         ]
         selected_div = c1.selectbox("🔮 占いを選ぶ", ["占いを選択してください..."] + div_list)
         if c2.button("この占いを始める"):
@@ -868,13 +875,30 @@ elif st.session_state.menu == "万能AI占い師の館":
                         st.error("エラーが発生しました。")
                 st.rerun()
 
-        if st.button("🔄 占い師との会話を最初からやり直す（リセット）"):
-            model = genai.GenerativeModel(get_ai_model_name(), system_instruction=FORTUNE_CHAT_PROMPT)
-            st.session_state.fortune_chat_session = model.start_chat(history=[])
-            st.session_state.fortune_chat_messages = [
-                {"role": "assistant", "content": "ようこそ、神秘の部屋へ。✨\n私は世界中のあらゆる占術をマスターした万能占い師です。\n\n今日は何の占いをしますか？下のメニューから選ぶか、直接話しかけてくださいね💖"}
-            ]
-            st.rerun()
+        # 📸 カメラ・写真送信エリア（手相・人相用）
+        with st.expander("📸 写真を送る（手相・人相・コーヒー占いなど）", expanded=False):
+            st.write("占い師から「写真を送ってください」と言われたら、こちらから撮影またはアップロードしてください。")
+            cam_img = st.camera_input("カメラで撮影する")
+            up_img = st.file_uploader("画像ファイルをアップロードする", type=["jpg", "jpeg", "png"])
+            
+            img_source = cam_img if cam_img else up_img
+            
+            if img_source:
+                if st.button("🔮 この写真を占い師に見せる", type="primary"):
+                    try:
+                        img = Image.open(img_source)
+                        user_msg = "写真を送りました。この画像を鑑定してください。"
+                        
+                        # メッセージ履歴の更新（画面表示用）
+                        st.session_state.fortune_chat_messages.append({"role": "user", "content": "📸 （写真を送信しました）\n" + user_msg})
+                        
+                        with st.spinner("AI占い師が写真をじっくりと鑑定しています..."):
+                            # Geminiに画像とテキストを同時に送信
+                            response = st.session_state.fortune_chat_session.send_message([user_msg, img], safety_settings=SAFETY_SETTINGS)
+                            st.session_state.fortune_chat_messages.append({"role": "assistant", "content": response.text})
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"写真の送信に失敗しました: {e}")
 
         st.markdown("---")
 
@@ -888,18 +912,26 @@ elif st.session_state.menu == "万能AI占い師の館":
         user_input = st.chat_input("占い師に話しかける...（例：私の名前は山田太郎です）")
 
         if user_input:
-            # ユーザーの入力を画面に表示し、履歴に追加
             st.session_state.fortune_chat_messages.append({"role": "user", "content": user_input})
             with st.chat_message("user", avatar="👤"):
                 st.markdown(user_input)
                 
-            # AI（占い師）の応答を生成
             with st.chat_message("assistant", avatar="🔮"):
                 with st.spinner("星の導きを読み解いています..."):
                     try:
                         response = st.session_state.fortune_chat_session.send_message(user_input, safety_settings=SAFETY_SETTINGS)
                         st.markdown(response.text)
-                        # 応答を履歴に追加
                         st.session_state.fortune_chat_messages.append({"role": "assistant", "content": response.text})
                     except Exception as e:
                         st.error("星の声を読み取れませんでした。もう一度話しかけてみてください。")
+                        
+        if st.button("🔄 占い師との会話を最初からやり直す（リセット）"):
+            try:
+                model = genai.GenerativeModel(get_ai_model_name(), system_instruction=FORTUNE_CHAT_PROMPT)
+                st.session_state.fortune_chat_session = model.start_chat(history=[])
+                st.session_state.fortune_chat_messages = [
+                    {"role": "assistant", "content": "ようこそ、神秘の部屋へ。✨\n私は世界中のあらゆる占術をマスターし、「視覚」も持った万能占い師です。\n\n今日は何の占いをしますか？下のメニューから選ぶか、直接話しかけてくださいね💖"}
+                ]
+            except Exception as e:
+                st.error(f"モデルの初期化に失敗しました: {e}")
+            st.rerun()
