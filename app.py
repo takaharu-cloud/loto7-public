@@ -6,6 +6,7 @@ import re
 import random
 import json
 import os
+import hashlib
 from collections import Counter
 from datetime import datetime, timedelta, date, timezone
 import google.generativeai as genai
@@ -60,7 +61,7 @@ USER_PROFILES = {
 }
 
 # ==========================================
-# 2. クラウドデータベース連携（★これを復元！）
+# 2. クラウドデータベース連携
 # ==========================================
 @st.cache_resource
 def get_gspread_client():
@@ -111,7 +112,7 @@ MIYAHIRA_PROMPT = f"""
 """
 
 def get_ai_model_name():
-    return "gemini-2.5-pro"
+    return "gemini-1.5-pro"
 
 # ==========================================
 # 4. 各種センサー・計算関数群
@@ -303,6 +304,9 @@ if st.session_state.menu == "ホーム":
         st.button("4. 最終予測決定（AI相談・決断）", on_click=change_menu, args=("最終予測決定",))
         st.write("")
         st.button("5. 結果発表と振り返り（チャット反省会）", on_click=change_menu, args=("結果発表と振り返り",))
+        st.write("")
+        # ★ 新規追加メニューボタン
+        st.button("6. 究極金運・購入ナビ（全19占術）", on_click=change_menu, args=("究極金運・購入ナビ",))
 
     st.markdown("---")
     if get_gspread_client() is None: st.error("データベース接続設定（Secrets）が未完了です。")
@@ -794,3 +798,135 @@ elif st.session_state.menu == "結果発表と振り返り":
                 with st.expander(f"記録: {row.get('日時', '')} | {row.get('対象回号', '')}"):
                     st.write(row.get("決断内容", ""))
         else: st.info("記録はありません。")
+
+# ==========================================
+# 6. 新規追加: 究極金運・購入ナビ（19占術占い）
+# ==========================================
+elif st.session_state.menu == "究極金運・購入ナビ":
+    st.title("🧭 究極金運・購入ナビ（19占術占い）")
+    st.markdown("<div class='info-box'>世界中に存在する19種類の占術（命占・卜占・相占）のアルゴリズムを統合し、ロト7を購入すべき【最適な日・時間・方位・売り場環境】や現在の運気波長を解析します。<br>※1〜37の予想は「日々の予想・積上げ」で行い、ここでは<b>【いつ、どこで、どう買うべきか】</b>の作戦行動書をAIが生成します。</div>", unsafe_allow_html=True)
+    
+    st.markdown("<div class='person-select'><h4>鑑定対象者の選択</h4></div>", unsafe_allow_html=True)
+    operator = st.radio("運気を鑑定する方を選択してください", [u1_name, u2_name], horizontal=True, label_visibility="collapsed")
+    ob_date = USER_PROFILES[operator]["birth"]
+
+    with st.form("fortune_form"):
+        c1, c2 = st.columns(2)
+        target_date = c1.date_input("購入予定日（ベースとなる日）", value=datetime.now(JST).date())
+        today_feeling = c2.selectbox("現在の直感・気分（卜占の波長調整）", ["勘が冴えている", "穏やかな気持ち", "なんとなくソワソワする", "無心・自然体"])
+        
+        st.markdown("#### ✋ 今日の状態（相占）")
+        c3, c4 = st.columns(2)
+        face_cond = c3.selectbox("本日の人相（顔のツヤ・血色）", ["ツヤツヤで血色が良い（大吉）", "普通（吉）", "少し疲れている（平）"])
+        palm_cond = c4.selectbox("本日の手相（金運線の見え方）", ["金運線がくっきり見える（強）", "普通（中）", "見えにくい（弱）"])
+
+        submitted = st.form_submit_button("全19占術統合エンジンを起動し、最適な購入行動計画を策定する")
+
+        if submitted:
+            if not api_key: st.error("AIによる解析レポートの生成には、APIキーが必要です。")
+            else:
+                with st.spinner("東洋・西洋の19占術データと現在のバイオリズムを照合中..."):
+                    
+                    # 疑似的に19占術の結果を生成（入力を元にハッシュ値を生成し、運命的な結果を算出）
+                    seed_mei = int(hashlib.md5(f"{operator}{ob_date}{target_date}".encode()).hexdigest(), 16)
+                    seed_boku = int(datetime.now().timestamp() * 1000) + sum(ord(c) for c in today_feeling)
+                    seed_sou = int(hashlib.md5(f"{operator}{face_cond}{palm_cond}".encode()).hexdigest(), 16)
+
+                    # --- 1. 命占 (Mei-sen) ---
+                    rng_mei = random.Random(seed_mei)
+                    destiny_num = sum(int(x) for x in ob_date.strftime("%Y%m%d"))
+                    while destiny_num > 9 and destiny_num not in [11, 22, 33]:
+                        destiny_num = sum(int(x) for x in str(destiny_num))
+                    
+                    mei_results = {
+                        "西洋占星術": rng_mei.choice(["木星と太陽のトライン（大吉）", "月と金星のコンジャンクション", "水星の好配置（情報運吉）"]),
+                        "四柱推命": "日干支との相性: 財星が巡る日",
+                        "九星気学": "本命星に基づく本日の吉数エネルギー強",
+                        "宿曜占星術": rng_mei.choice(["「栄」の吉日", "「親」の吉日", "「成」の吉日"]),
+                        "紫微斗数": "財帛宮エネルギー極大",
+                        "数秘術": f"運命数 {destiny_num} の共鳴日",
+                        "マヤ暦": f"KIN{rng_mei.randint(1,260)} (銀河の音{rng_mei.randint(1,13)})"
+                    }
+
+                    # --- 2. 卜占 (Boku-sen) ---
+                    rng_boku = random.Random(seed_boku)
+                    tarot = rng_boku.choice(["運命の輪 (チャンス到来)", "太陽 (大成功)", "魔術師 (準備完了)", "星 (希望)", "女帝 (豊穣)"])
+                    rune = rng_boku.choice(["フェフ (財産・富)", "ソウェイル (成功・勝利)", "ダガズ (好転)", "ウィン (喜び)"])
+                    
+                    boku_results = {
+                        "タロット": tarot,
+                        "易占い": rng_boku.choice(["火天大有 (大いなる所有)", "地天泰 (安泰)", "雷天大壮 (勢いあり)"]),
+                        "ルーン": rune,
+                        "オラクル": f"エンジェルナンバー {rng_boku.choice(['777','888','111','444'])}",
+                        "ダイス": f"出目 {rng_boku.randint(1,6)}と{rng_boku.randint(1,6)} (直感ブースト)",
+                        "紅茶占い": f"カップの底に「{rng_boku.choice(['鳥', '星', '王冠', '船'])}」のシンボル",
+                        "ダウジング": "振り子がYESの方向へ強くスイング"
+                    }
+
+                    # --- 3. 相占 (Sou-sen) ---
+                    rng_sou = random.Random(seed_sou)
+                    directions = ["北", "北東", "東", "南東", "南", "南西", "西", "北西"]
+                    best_dir = rng_sou.choice(directions)
+                    best_time = rng_sou.choice(["09:00〜11:00 (巳の刻)", "11:00〜13:00 (午の刻)", "13:00〜15:00 (未の刻)", "15:00〜17:00 (申の刻)", "17:00〜19:00 (酉の刻)"])
+                    best_spot = rng_sou.choice(["大通りに面した活気ある売り場", "自然や緑の近くにある売り場", "水辺に近い売り場", "高層階や大きなビルの近く", "いつも通る道から少し外れた隠れ家的な売り場"])
+                    aura = rng_sou.choice(["黄金(ゴールド)", "白(クリア)", "紫(パープル)", "深紅(レッド)"])
+
+                    name_strokes = sum(len(c.encode('utf-8')) for c in operator) % 15 + 85
+                    
+                    so_results = {
+                        "手相": f"入力状態: {palm_cond} -> 金運線活性化",
+                        "人相": f"入力状態: {face_cond} -> 福相スコア高",
+                        "風水": f"大吉方位: 【{best_dir}】 / 環境: 【{best_spot}】",
+                        "姓名判断": f"総格波長エネルギー: {name_strokes}/100",
+                        "オーラ鑑定": f"現在のオーラ: {aura} (引き寄せ状態)"
+                    }
+
+                    fortune_score = rng_boku.randint(85, 100)
+                    
+                    st.markdown("### 🔮 19占術 総合スキャン結果")
+                    st.metric("本日の総合金運波長", f"{fortune_score} / 100", delta="エネルギー最高潮")
+                    
+                    c_res1, c_res2, c_res3 = st.columns(3)
+                    with c_res1:
+                        st.markdown("**【命占】(宿命と暦)**")
+                        for k, v in mei_results.items(): st.caption(f"- **{k}**: {v}")
+                    with c_res2:
+                        st.markdown("**【卜占】(偶然と直感)**")
+                        for k, v in boku_results.items(): st.caption(f"- **{k}**: {v}")
+                    with c_res3:
+                        st.markdown("**【相占】(状態と環境)**")
+                        for k, v in so_results.items(): st.caption(f"- **{k}**: {v}")
+
+                    # --- AI指示書の生成 ---
+                    prompt = f"""
+                    対象者: {operator}
+                    あなたは論理的で冷静な現場のデータサイエンティストであり、有能な右腕コンサルタントです。
+                    今、システムから対象者の「全19種類の占術結果（命占・卜占・相占）」が出力されました。
+                    
+                    【システム出力データ】
+                    ・対象日: {target_date.strftime('%Y年%m月%d日')}
+                    ・金運波長スコア: {fortune_score}/100
+                    ・吉方位: {best_dir}
+                    ・推奨時間帯: {best_time}
+                    ・推奨売り場環境: {best_spot}
+                    ・タロット/ルーン: {tarot} / {rune}
+                    ・現在のオーラ: {aura}
+                    
+                    これらのデータを総合的に分析し、ユーザーに対して「いつ（日時・最適な時間帯）」「どこで（方角・売り場の特徴）」「どのような心構え・事前行動（徳積みなど）」でロト7の購入を実行すべきか、現場の【施工計画書・行動指示書】のように明確かつ論理的にアドバイスしてください。
+                    
+                    【絶対ルール】
+                    1. ロト7の予想番号（1〜37）は別のシステムで算出済みなので、ここでは言及しないこと。
+                    2. 「購入のための最適な行動（タイミング、環境、心の在り方）」に特化して指示を出すこと。
+                    3. ポエムや過剰なスピリチュアル表現を避け、日々の徳積みや家族への想いが運気を高めたことをビジネスライクかつ熱く肯定すること。
+                    4. 見出しや箇条書きを多用して極めて読みやすく構成すること。絵文字は一切使用しないこと。
+                    """
+                    
+                    try:
+                        model = genai.GenerativeModel(get_ai_model_name(), system_instruction=MIYAHIRA_PROMPT)
+                        res = model.generate_content(prompt)
+                        st.markdown("#### 📋 AIコンサルタントからの「ロト7購入作戦・行動指示書」")
+                        st.markdown("<div class='chat-box'>", unsafe_allow_html=True)
+                        st.write(res.text)
+                        st.markdown("</div>", unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"エラー: {e}")
