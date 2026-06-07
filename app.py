@@ -112,7 +112,7 @@ MIYAHIRA_PROMPT = f"""
 """
 
 def get_ai_model_name():
-    return "gemini-1.5-pro"
+    return "gemini-2.5-pro"
 
 # ==========================================
 # 4. 各種センサー・計算関数群
