@@ -61,7 +61,7 @@ USER_PROFILES = {
 }
 
 # ==========================================
-# 2. クラウドデータベース連携（★これを復元！）
+# 2. クラウドデータベース連携
 # ==========================================
 @st.cache_resource
 def get_gspread_client():
@@ -100,7 +100,6 @@ if api_key:
     genai.configure(api_key=api_key)
 
 def get_ai_model_name():
-    # 妥協なく最高性能を発揮するため、ジェミニ 2.5 Proを指定
     return "gemini-2.5-pro"
 
 MIYAHIRA_PROMPT = f"""
@@ -182,21 +181,36 @@ def get_current_weather_and_pressure():
     except:
         return "穏やか", "普通"
 
+# ★ 新規：2000年1月6日の新月を基準にした高精度な月齢計算
+def get_moon_age(y, m, d):
+    known_new_moon = date(2000, 1, 6)
+    target_date = date(y, m, d)
+    diff = (target_date - known_new_moon).days
+    return diff % 29.530588853
+
 def get_moon_and_tide(y, m, d):
-    c = [0, 2, 0, 2, 2, 4, 5, 6, 7, 8, 9, 10]
-    age = (((y - 11) % 19) * 11 + c[m-1] + d) % 30
-    if age < 2 or age > 28: phase = "新月"
-    elif 2 <= age < 7: phase = "三日月"
-    elif 7 <= age < 12: phase = "上弦の月"
-    elif 12 <= age < 17: phase = "満月"
-    elif 17 <= age < 22: phase = "下弦の月"
-    else: phase = "月待ち"
-    ma = int(age)
-    if ma in [0,1,2, 14,15,16, 29]: tide, gravity = "大潮", "強(極大)"
-    elif ma in [7,8,9, 22,23,24]: tide, gravity = "小潮", "弱"
+    age = get_moon_age(y, m, d)
+    
+    # 四捨五入して整数で月齢を判定 (0〜29)
+    ma = int(round(age)) % 30
+    
+    # 月相の定義
+    if ma in [0, 1, 2, 29]: phase = "新月"
+    elif ma in [3, 4, 5, 6]: phase = "三日月"
+    elif ma in [7, 8, 9]: phase = "上弦の月"
+    elif ma in [10, 11, 12, 13]: phase = "十三夜"
+    elif ma in [14, 15, 16, 17]: phase = "満月"
+    elif ma in [18, 19, 20, 21]: phase = "下弦の月"
+    elif ma in [22, 23, 24]: phase = "二十三夜"
+    else: phase = "二十六夜"
+    
+    # 潮回りと重力の定義（大潮と満月・新月を確実に連動させる）
+    if ma in [0, 1, 2, 14, 15, 16, 17, 29]: tide, gravity = "大潮", "強(極大)"
+    elif ma in [7, 8, 9, 22, 23, 24]: tide, gravity = "小潮", "弱"
     elif ma in [10, 25]: tide, gravity = "長潮", "弱"
     elif ma in [11, 26]: tide, gravity = "若潮", "中"
     else: tide, gravity = "中潮", "中"
+    
     return phase, tide, gravity
 
 def get_time_zone():
@@ -220,8 +234,8 @@ def get_fengshui(target_date):
 
 def get_real_calendar_info(target_date):
     y, m, d = target_date.year, target_date.month, target_date.day
-    c = [0, 2, 0, 2, 2, 4, 5, 6, 7, 8, 9, 10]
-    moon_age = int((((y - 11) % 19) * 11 + c[m-1] + d) % 30)
+    # 六曜の計算も精度の高い月齢を参照するように修正
+    moon_age = int(round(get_moon_age(y, m, d))) % 30
     kyureki_day = moon_age + 1 if moon_age + 1 <= 30 else 1
     kyureki_month = m - 1 if m > 1 else 12 
     rokuyo_list = ["大安", "赤口", "先勝", "友引", "先負", "仏滅"]
@@ -628,7 +642,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                 else: df_note = df_new
                 
                 save_sheet("予測ノート", df_note)
-                st.success(f"素晴らしい行動と願いを込めた30口を記録しました！（担当: {operator}）")
+                st.success(f"素晴らしい行動と願いを込めた30口を記録しました！（担当: {operator}）\n【{m_phase} / {m_tide}】の重力波長を正確に反映しました。")
 
 elif st.session_state.menu == "最終予測決定":
     st.title("最終予測決定（購入・AI対話相談）")
