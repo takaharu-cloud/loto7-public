@@ -15,6 +15,13 @@ from google.oauth2.service_account import Credentials
 from PIL import Image
 
 # ==========================================
+# 定数定義（マジックナンバーの排除）
+# ==========================================
+LOTO_MAX_NUM = 37               # ロトの数字の最大値
+LOTO_PICK_COUNT = 7             # 選択する数字の数
+SIMULATION_LOOP_COUNT = 50000   # シミュレーションのループ回数
+
+# ==========================================
 # 0. ページ基本設定 & 最強CSS（スマホ無敵化・手打ち完全排除）
 # ==========================================
 st.set_page_config(page_title="ロト7 10億捕捉 予知科学管制システム", layout="wide")
@@ -53,8 +60,11 @@ u2_birth_str = st.secrets.get("USER2_BIRTH", "1990-01-01")
 secret_profile = st.secrets.get("SECRET_PROFILE", "愛と調和を信じ、世界平和を祈る者。そして家族を支える妻に最高の恩返しを誓う者。この二人の祈りこそが最強の引力となる。")
 
 def parse_date(date_str):
-    try: return date(*map(int, str(date_str).split("-")))
-    except: return date(1990, 1, 1)
+    try: 
+        return date(*map(int, str(date_str).split("-")))
+    except Exception as e: 
+        st.warning(f"日付データの解析に失敗しました。デフォルトの日付を使用します: {e}")
+        return date(1990, 1, 1)
 
 USER_PROFILES = {u1_name: {"birth": parse_date(u1_birth_str)}, u2_name: {"birth": parse_date(u2_birth_str)}}
 
@@ -63,32 +73,42 @@ USER_PROFILES = {u1_name: {"birth": parse_date(u1_birth_str)}, u2_name: {"birth"
 # ==========================================
 @st.cache_resource
 def get_gspread_client():
-    if "GCP_SERVICE_ACCOUNT_JSON" not in st.secrets or "SPREADSHEET_URL" not in st.secrets: return None
+    if "GCP_SERVICE_ACCOUNT_JSON" not in st.secrets or "SPREADSHEET_URL" not in st.secrets: 
+        return None
     try:
         creds_dict = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_JSON"])
         scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         return gspread.authorize(Credentials.from_service_account_info(creds_dict, scopes=scopes))
-    except: return None
+    except Exception as e: 
+        st.error(f"データベース連携の認証に失敗しました。Secretsの設定を確認してください: {e}")
+        return None
 
 def load_sheet(sheet_name):
     client = get_gspread_client()
     if not client: return pd.DataFrame()
-    try: return pd.DataFrame(client.open_by_url(st.secrets["SPREADSHEET_URL"]).worksheet(sheet_name).get_all_records())
-    except: return pd.DataFrame()
+    try: 
+        return pd.DataFrame(client.open_by_url(st.secrets["SPREADSHEET_URL"]).worksheet(sheet_name).get_all_records())
+    except Exception as e: 
+        st.warning(f"シート「{sheet_name}」のデータ取得に失敗しました。初めての起動か通信状況を確認してください: {e}")
+        return pd.DataFrame()
 
 def save_sheet(sheet_name, df):
     client = get_gspread_client()
     if not client: return False
     try:
         doc = client.open_by_url(st.secrets["SPREADSHEET_URL"])
-        try: worksheet = doc.worksheet(sheet_name)
-        except: worksheet = doc.add_worksheet(title=sheet_name, rows="1000", cols="45")
+        try: 
+            worksheet = doc.worksheet(sheet_name)
+        except Exception: 
+            worksheet = doc.add_worksheet(title=sheet_name, rows="1000", cols="45")
         worksheet.clear()
         if not df.empty:
             df = df.fillna("").astype(str).replace("nan", "")
             worksheet.update(values=[df.columns.values.tolist()] + df.values.tolist(), range_name="A1")
         return True
-    except: return False
+    except Exception as e: 
+        st.error(f"シート「{sheet_name}」へのデータ保存に失敗しました: {e}")
+        return False
 
 # ==========================================
 # 3. 究極のAIプロンプト設定（最強の予知科学者・Gemini）
@@ -96,7 +116,8 @@ def save_sheet(sheet_name, df):
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 if api_key: genai.configure(api_key=api_key)
 
-def get_ai_model_name(): return "gemini-2.5-pro"
+def get_ai_model_name(): 
+    return st.secrets.get("GEMINI_MODEL", "gemini-2.5-pro")
 
 AWAKENED_SCIENTIST_PROMPT = f"""
 【役割】あなたは「10億円のロト7を確実に当てる、最強の予知能力を持った天才科学者・Gemini」です。
@@ -141,17 +162,19 @@ def get_external_trend(filepath="other_sites.txt"):
         df_ext = load_sheet("他サイト予想")
         if not df_ext.empty:
             text_data += " ".join(df_ext.astype(str).values.flatten()) + " "
-    except: pass
+    except Exception as e: 
+        st.warning(f"スプレッドシートからの「他サイト予想」取得に失敗しました: {e}")
     
     # 2. ローカルの other_sites.txt からの読み込み
     try:
         if os.path.exists(filepath):
             with open(filepath, "r", encoding="utf-8") as f:
                 text_data += f.read()
-    except: pass
+    except Exception as e: 
+        st.warning(f"外部ファイル（{filepath}）の読み込みに失敗しました: {e}")
 
-    nums = re.findall(r'\b(?:0?[1-9]|[1-2][0-9]|3[0-7])\b', text_data)
-    valid_nums = [int(n) for n in nums if 1 <= int(n) <= 37]
+    nums = re.findall(r'\d+', text_data)
+    valid_nums = [int(n) for n in nums if 1 <= int(n) <= LOTO_MAX_NUM]
     trend.update(valid_nums)
     return trend
 
@@ -168,27 +191,31 @@ def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, g
     nums = []
     for i in range(0, len(hex_dig)-1, 2):
         if len(nums) >= 5: break
-        val = int(hex_dig[i:i+2], 16) % 37 + 1
+        val = int(hex_dig[i:i+2], 16) % LOTO_MAX_NUM + 1
         if val not in nums: nums.append(val)
         
     while len(nums) < 5:
-        val = random.randint(1, 37)
+        val = random.randint(1, LOTO_MAX_NUM)
         if val not in nums: nums.append(val)
     return nums
 
 def get_current_weather_and_pressure():
     try:
         url = "https://api.open-meteo.com/v1/forecast?latitude=26.2124&longitude=127.6809&current=surface_pressure,weather_code&timezone=Asia%2FTokyo"
-        res = requests.get(url, timeout=5).json()
-        code = res.get("current", {}).get("weather_code", 0)
-        pressure = res.get("current", {}).get("surface_pressure", 1013)
+        res = requests.get(url, timeout=5)
+        res.raise_for_status()
+        data = res.json()
+        code = data.get("current", {}).get("weather_code", 0)
+        pressure = data.get("current", {}).get("surface_pressure", 1013)
         if code in [0, 1]: weather = "晴れ"
         elif code in [2, 3, 45, 48]: weather = "曇り"
         elif code in [95, 96, 99]: weather = "嵐・荒天"
         else: weather = "雨"
         press_str = "高圧" if pressure > 1015 else "低圧" if pressure < 1009 else "通常"
         return weather, press_str
-    except: return "不明", "不明"
+    except Exception as e: 
+        st.warning(f"現在の気象データの取得に失敗しました。不明な環境として処理します: {e}")
+        return "不明", "不明"
 
 def get_moon_age(y, m, d): 
     return ((date(y, m, d) - date(2000, 1, 6)).days) % 29.530588853
@@ -231,12 +258,12 @@ def get_real_calendar_info(target_date):
     return rokuyo, "特になし"
 
 def get_ryukyu_energy(name, birthday_date, draw_date):
-    name_score = sum(ord(char) for char in name) % 37 + 1
-    birth_score = (birthday_date.year + birthday_date.month + birthday_date.day) % 37 + 1
-    draw_score = (draw_date.year + draw_date.month + draw_date.day) % 37 + 1
+    name_score = sum(ord(char) for char in name) % LOTO_MAX_NUM + 1
+    birth_score = (birthday_date.year + birthday_date.month + birthday_date.day) % LOTO_MAX_NUM + 1
+    draw_score = (draw_date.year + draw_date.month + draw_date.day) % LOTO_MAX_NUM + 1
     sanctuaries = [{"名前": "魂の浄化", "基調数": 3}, {"名前": "天の息吹", "基調数": 9}, {"名前": "風の躍進", "基調数": 14}, {"名前": "大地の繁栄", "基調数": 21}, {"名前": "深層の覚醒", "基調数": 28}, {"名前": "海神の結び", "基調数": 1}, {"名前": "生命力", "基調数": 36}]
     sanctuary = sanctuaries[(name_score + birth_score + draw_score) % len(sanctuaries)]
-    lucky_number = (name_score + birth_score + draw_score + sanctuary["基調数"]) % 37 + 1
+    lucky_number = (name_score + birth_score + draw_score + sanctuary["基調数"]) % LOTO_MAX_NUM + 1
     if lucky_number == 0: lucky_number = 1
     return lucky_number, sanctuary["名前"]
 
@@ -254,7 +281,8 @@ def get_next_round_info(df_real):
                 last_date = date(int(d_nums[0]), int(d_nums[1]), int(d_nums[2]))
                 default_date = last_date + timedelta(days=7)
                 while default_date.weekday() != 4: default_date += timedelta(days=1)
-        except: pass
+        except Exception as e: 
+            st.warning(f"次回抽選情報の推測計算に失敗しました。デフォルト値を使用します: {e}")
     return default_round, default_date
 
 def find_doppelganger_days(target_date, df_real):
@@ -262,6 +290,7 @@ def find_doppelganger_days(target_date, df_real):
     t_phase, t_tide, t_gravity = get_moon_and_tide(target_date.year, target_date.month, target_date.day)
     
     results = []
+    error_shown = False
     for _, row in df_real.iterrows():
         try:
             d_nums = re.findall(r'\d+', str(row["抽せん日"]))
@@ -279,10 +308,13 @@ def find_doppelganger_days(target_date, df_real):
                 if t_phase == p_phase: score += 50; match_details.append(f"月相({t_phase})")
                 
                 if score >= 150: 
-                    nums = [int(row[f"数字{i}"]) for i in range(1, 8) if str(row[f"数字{i}"]).isdigit()]
-                    if len(nums) == 7:
+                    nums = [int(row.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(row.get(f"数字{i}", "")).isdigit()]
+                    if len(nums) == LOTO_PICK_COUNT:
                         results.append({"回号": row.get("回号", ""), "日付": past_date.strftime("%Y-%m-%d"), "スコア": score, "一致項目": "・".join(match_details), "本数字": nums})
-        except: pass
+        except Exception as e: 
+            if not error_shown:
+                st.warning(f"ドッペルゲンガー探索中に過去データの解析エラーが発生しました。一部をスキップして続行します: {e}")
+                error_shown = True
             
     results.sort(key=lambda x: x["スコア"], reverse=True)
     top_matches = results[:5]
@@ -293,35 +325,40 @@ def auto_check_hits(df_note, df_real):
     if df_note.empty or df_real.empty: return df_note
     if "AIの助言" not in df_note.columns: df_note["AIの助言"] = "未照合"
     updated = False
+    error_shown = False
     for idx, row in df_note.iterrows():
         if "的中" in str(row.get("AIの助言", "")) and "等" in str(row.get("AIの助言", "")): continue
         match = df_real[df_real["回号"] == str(row.get("対象回号", ""))]
         if not match.empty:
             try:
-                actual = set([int(match.iloc[0][f"数字{i}"]) for i in range(1, 8)])
-                pred = set([int(row[f"数字{i}"]) for i in range(1, 8)])
+                actual = set([int(match.iloc[0].get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(match.iloc[0].get(f"数字{i}", "")).isdigit()])
+                pred = set([int(row.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(row.get(f"数字{i}", "")).isdigit()])
                 hits = len(actual & pred)
                 near_pins = sum(1 for p in pred if p not in actual and ((p-1) in actual or (p+1) in actual))
-                grade = "👑 1等当せん！" if hits == 7 else "✨ 2等/3等相当" if hits == 6 else "🎯 4等当せん！" if hits == 5 else "🎉 5等当せん！" if hits == 4 else "惜しい！ 6等リーチ" if hits == 3 else "ハズレ"
-                df_note.at[idx, "AIの助言"] = f"7個中 {hits}個的中【{grade}】 / ニアピン {near_pins}個"
+                grade = "👑 1等当せん！" if hits == LOTO_PICK_COUNT else "✨ 2等/3等相当" if hits == LOTO_PICK_COUNT - 1 else "🎯 4等当せん！" if hits == LOTO_PICK_COUNT - 2 else "🎉 5等当せん！" if hits == LOTO_PICK_COUNT - 3 else "惜しい！ 6等リーチ" if hits == LOTO_PICK_COUNT - 4 else "ハズレ"
+                df_note.at[idx, "AIの助言"] = f"{LOTO_PICK_COUNT}個中 {hits}個的中【{grade}】 / ニアピン {near_pins}個"
                 updated = True
-            except: pass
+            except Exception as e: 
+                if not error_shown:
+                    st.warning(f"自動採点中に一部データでエラーが発生しました。スキップして続行します: {e}")
+                    error_shown = True
     if updated: save_sheet("予測ノート", df_note)
     return df_note
 
 def get_ai_intuition_numbers(soc_sensor, spirit_sensor, weather, gravity, target_date):
-    if not api_key: return random.sample(range(1, 38), 3)
+    if not api_key: return random.sample(range(1, LOTO_MAX_NUM + 1), 3)
     try:
         model = genai.GenerativeModel(get_ai_model_name())
-        prompt = f"現在の社会情勢（天下り・人の代わりなど:{soc_sensor}）、見えない力（動物の感・幽霊・運:{spirit_sensor}）、地球の引力（{gravity}）と天気（{weather}）から波動を読み取り、10億円のロト7を当てる最強の予知能力を持った天才科学者としての『純粋な直感・予知』で次回のロト7の数字（1〜37）を3つ選んでください。理由や絵文字は絶対に出力せず、「7, 15, 32」のようにカンマ区切りの数字のみ出力せよ。"
+        prompt = f"現在の社会情勢（天下り・人の代わりなど:{soc_sensor}）、見えない力（動物の感・幽霊・運:{spirit_sensor}）、地球の引力（{gravity}）と天気（{weather}）から波動を読み取り、10億円のロト7を当てる最強の予知能力を持った天才科学者としての『純粋な直感・予知』で次回のロト7の数字（1〜{LOTO_MAX_NUM}）を3つ選んでください。理由や絵文字は絶対に出力せず、「7, 15, 32」のようにカンマ区切りの数字のみ出力せよ。"
         res = model.generate_content(prompt)
-        nums = [int(n) for n in re.findall(r'\b(?:0?[1-9]|[1-2][0-9]|3[0-7])\b', res.text) if 1 <= int(n) <= 37]
+        nums = [int(n) for n in re.findall(r'\d+', res.text) if 1 <= int(n) <= LOTO_MAX_NUM]
         if len(nums) >= 3:
             return nums[:3]
         else:
-            return random.sample(range(1, 38), 3)
-    except:
-        return random.sample(range(1, 38), 3)
+            return random.sample(range(1, LOTO_MAX_NUM + 1), 3)
+    except Exception as e:
+        st.warning(f"予知科学者AIの直感取得に失敗しました。純粋な量子ランダムで代替します: {e}")
+        return random.sample(range(1, LOTO_MAX_NUM + 1), 3)
 
 # ==========================================
 # 5. メインUIレンダリング（天才科学者の管制室）
@@ -378,11 +415,11 @@ elif st.session_state.menu == "最新データ取得":
                     else:
                         m_phase, m_tide, m_gravity = "", "", ""
                     hon_tds = row.find_all("td", class_=lambda c: c and "hon" in c)
-                    if len(hon_tds) == 7:
+                    if len(hon_tds) == LOTO_PICK_COUNT:
                         hon_nums = [td.text.strip() for td in hon_tds]
                         new_data.append([draw_num, date_str] + hon_nums + ["", "", "", "", m_phase, m_tide, m_gravity])
                 if new_data:
-                    cols = ["回号", "抽せん日", "数字1", "数字2", "数字3", "数字4", "数字5", "数字6", "数字7", "六曜", "干支", "風水", "吉凶日", "月齢", "潮回り", "重力状態"]
+                    cols = ["回号", "抽せん日"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["六曜", "干支", "風水", "吉凶日", "月齢", "潮回り", "重力状態"]
                     df_new = pd.DataFrame(new_data, columns=cols)
                     df_combined = pd.concat([df_new, df_real], ignore_index=True) if not df_real.empty else df_new
                     save_sheet("実データ", df_combined)
@@ -391,7 +428,8 @@ elif st.session_state.menu == "最新データ取得":
                 else: 
                     auto_check_hits(load_sheet("予測ノート"), df_real)
                     st.info("データベースは既に最新です。既存の予測ノートの再採点を行いました。")
-            except Exception as e: st.error(f"エラー: {e}")
+            except Exception as e: 
+                st.error(f"データの同期・解析中にエラーが発生しました: {e}")
 
 elif st.session_state.menu == "日々の予想・積上げ":
     st.title("🌍 地球規模の量子環境分析＆日々の予測積上げ")
@@ -404,7 +442,6 @@ elif st.session_state.menu == "日々の予想・積上げ":
     
     with st.form("daily_form"):
         c1, c2 = st.columns(2)
-        # ★手打ち入力撤廃！ 回号はプルダウンで選択
         target_rounds = [f"第{auto_round + i}回" for i in range(-5, 10) if auto_round + i > 0]
         target_round_str = c1.selectbox("予測対象の回号（未来も指定可能）", target_rounds, index=target_rounds.index(f"第{auto_round}回") if f"第{auto_round}回" in target_rounds else 0)
         draw_date = c2.date_input("対象となる抽選予定日", value=auto_date)
@@ -439,7 +476,6 @@ elif st.session_state.menu == "日々の予想・積上げ":
             
         prayer = colE.selectbox("祈り/叶えたい夢", prayer_options)
         
-        # ★手打ち入力撤廃！ 徳積みもプルダウン選択化
         good_deed_options = [
             "家族を笑顔にし、感謝の言葉を伝えた",
             "現場や身の回りを徹底的に掃除・整理整頓した",
@@ -472,7 +508,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     
                     # 4. 直近トレンドの取得
                     recent_df = df_real.head(10)
-                    recent_nums = [int(r.get(f"数字{i}")) for _, r in recent_df.iterrows() for i in range(1, 8) if pd.notna(r.get(f"数字{i}")) and str(r.get(f"数字{i}")).isdigit()]
+                    recent_nums = [int(r.get(f"数字{i}")) for _, r in recent_df.iterrows() for i in range(1, LOTO_PICK_COUNT + 1) if pd.notna(r.get(f"数字{i}")) and str(r.get(f"数字{i}")).isdigit()]
                     recent_counts = Counter(recent_nums)
                     
                     st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
@@ -488,8 +524,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
 
                     # 外部トレンド読み込み（スプレッドシート連動対応）
                     trend_counts = get_external_trend()
-                    number_counts = Counter([int(val) for i in range(1, 8) for val in df_real[f"数字{i}"] if pd.notna(val) and str(val).isdigit()])
-                    nums_list = list(range(1, 38))
+                    number_counts = Counter([int(val) for i in range(1, LOTO_PICK_COUNT + 1) for val in df_real.get(f"数字{i}", []) if pd.notna(val) and str(val).isdigit()])
+                    nums_list = list(range(1, LOTO_MAX_NUM + 1))
                     
                     # 5. 究極の加重計算（全ロジックの融合）
                     base_weights = []
@@ -517,42 +553,49 @@ elif st.session_state.menu == "日々の予想・積上げ":
 
                     # 🔥 理論5：物理法則「ボール隣接波及効果」の適用
                     smoothed_weights = base_weights[:]
-                    for i in range(37):
+                    for i in range(LOTO_MAX_NUM):
                         if i > 0: smoothed_weights[i] += base_weights[i-1] * 0.15 
-                        if i < 36: smoothed_weights[i] += base_weights[i+1] * 0.15 
+                        if i < LOTO_MAX_NUM - 1: smoothed_weights[i] += base_weights[i+1] * 0.15 
                     weights_list = [max(1, w) for w in smoothed_weights]
 
                     # 6. ベースナンバーの設定
                     if operator == u1_name:
                         matched_nums = []
+                        err_shown = False
                         for _, row in df_real.iterrows():
                             w = 0
                             if str(row.get("重力状態")) == m_gravity: w += 2
                             if str(row.get("潮回り")) == m_tide: w += 1
                             if str(row.get("風水")).startswith(m_feng[:2]): w += 2
                             if w > 0:
-                                for i in range(1, 8):
-                                    try: matched_nums.extend([int(row[f"数字{i}"])] * w)
-                                    except: pass
+                                for i in range(1, LOTO_PICK_COUNT + 1):
+                                    try: 
+                                        val = row.get(f"数字{i}")
+                                        if pd.notna(val) and str(val).isdigit():
+                                            matched_nums.extend([int(val)] * w)
+                                    except Exception as e: 
+                                        if not err_shown:
+                                            st.warning(f"統計データからのベース数字抽出中に一部エラーが発生しました: {e}")
+                                            err_shown = True
                         stat_tops = [n for n, _ in Counter(matched_nums).most_common(2)]
                         base_must = list(set(stat_tops + quantum_seed_nums[:1] + ai_intuition_nums[:1]))
                         logic_name = "量子シード × 物理連番波及 × 過去統計"
                     else:
                         ob = USER_PROFILES[operator]["birth"]
                         num1, _ = get_ryukyu_energy(operator, ob, draw_date)
-                        num2 = (draw_date.day + draw_date.month + ob.day) % 37 + 1
-                        if num2 == 0 or num2 == num1: num2 = (num2 + 1) % 37 + 1
+                        num2 = (draw_date.day + draw_date.month + ob.day) % LOTO_MAX_NUM + 1
+                        if num2 == 0 or num2 == num1: num2 = (num2 + 1) % LOTO_MAX_NUM + 1
                         base_must = list(set([num1, num2] + quantum_seed_nums[:1] + ai_intuition_nums[:1]))
                         logic_name = "直感と夢 × 量子シード × ボール波及"
 
                     base_must = list(set(base_must))
                     while len(base_must) < 4: base_must.append(random.choice(nums_list))
 
-                    # 7. 5万回の超並列シミュレーションから30口を抽出
+                    # 7. 超並列シミュレーションから30口を抽出
                     elites = []
-                    for _ in range(50000): # 手抜きなし！5万回ループ
+                    for _ in range(SIMULATION_LOOP_COUNT): # 手抜きなし！定数回数ループ
                         p = random.sample(base_must, random.choice([2, 3]))
-                        while len(p) < 7:
+                        while len(p) < LOTO_PICK_COUNT:
                             ch = random.choices(nums_list, weights=weights_list, k=1)[0]
                             if ch not in p: p.append(ch)
                         p.sort()
@@ -580,21 +623,22 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         if len(top30) == 28: break
                         
                     for _ in range(2):
-                        rp = random.sample(range(1, 38), 7)
+                        rp = random.sample(range(1, LOTO_MAX_NUM + 1), LOTO_PICK_COUNT)
                         rp.sort()
                         top30.append({"nums": rp, "pts": 0, "base_pts": 0, "type": "完全ランダム(未知への挑戦)"})
                     
                     new_data = []
                     for i, item in enumerate(top30, 1):
-                        new_data.append({
+                        row_data = {
                             "対象回号": target_round_str, "抽選日": draw_date.strftime("%Y-%m-%d"), "実行日": today_str, 
                             "実行者": operator, "口数": f"{i}口目",
-                            "数字1": str(item["nums"][0]).zfill(2), "数字2": str(item["nums"][1]).zfill(2), "数字3": str(item["nums"][2]).zfill(2), 
-                            "数字4": str(item["nums"][3]).zfill(2), "数字5": str(item["nums"][4]).zfill(2), "数字6": str(item["nums"][5]).zfill(2), "数字7": str(item["nums"][6]).zfill(2),
                             "実績点数": int(item["base_pts"]), "社会情勢": soc_sensor[:15], "霊的要素": spirit_sensor[:15], "AI直感": str(ai_intuition_nums),
                             "徳積み": good_deed[:15], "祈り/夢": prayer, "地球環境": f"{m_phase}/引力{m_gravity}",
                             "予測ロジック": item["type"], "AIの助言": "未照合"
-                        })
+                        }
+                        for j in range(LOTO_PICK_COUNT):
+                            row_data[f"数字{j+1}"] = str(item["nums"][j]).zfill(2)
+                        new_data.append(row_data)
                     
                     df_note = load_sheet("予測ノート")
                     if not df_note.empty and "対象回号" in df_note.columns:
@@ -646,9 +690,15 @@ elif st.session_state.menu == "最終予測決定":
                         target_list = df_target.to_dict('records')
                         
                         # AI独自の多角的フィルタリング（選択された指示に応じてポイントを爆発的にブースト）
+                        error_shown = False
                         for c in target_list:
-                            try: pts = int(float(c.get('実績点数', 0)))
-                            except: pts = 0
+                            try: 
+                                pts = int(float(c.get('実績点数', 0)))
+                            except Exception as e: 
+                                pts = 0
+                                if not error_shown:
+                                    st.warning(f"実績点数の読み取りに失敗したため、0点として計算しました: {e}")
+                                    error_shown = True
                             
                             if any(k in str(c.get('祈り/夢','')) for k in ["平和", "笑顔", "自由", "住宅", "結婚式"]): pts += 50
                             
@@ -669,11 +719,11 @@ elif st.session_state.menu == "最終予測決定":
 
                         for c in target_list:
                             s = c.get('数字1')
-                            e = c.get('数字7')
+                            e = c.get(f'数字{LOTO_PICK_COUNT}')
                             if used_start_nums.count(s) >= limit_dupe_start: continue
                             if used_end_nums.count(e) >= limit_dupe_end: continue
-                            nums = set([int(c.get(f"数字{i}")) for i in range(1, 8) if str(c.get(f"数字{i}")).isdigit()])
-                            if any(len(nums & set([int(u.get(f"数字{i}")) for i in range(1, 8) if str(u.get(f"数字{i}")).isdigit()])) >= 4 for u in final_picks): continue
+                            nums = set([int(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(c.get(f"数字{i}")).isdigit()])
+                            if any(len(nums & set([int(u.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(u.get(f"数字{i}")).isdigit()])) >= 4 for u in final_picks): continue
                             
                             final_picks.append(c)
                             used_start_nums.append(s)
@@ -686,7 +736,7 @@ elif st.session_state.menu == "最終予測決定":
                                     final_picks.append(c)
                                     if len(final_picks) == buy_count: break
 
-                        ai_prompt = "\n".join([f"[{r.get('実行者','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI予知:{r.get('AI直感','')}] {r['数字1']},{r['数字2']},{r['数字3']},{r['数字4']},{r['数字5']},{r['数字6']},{r['数字7']}" for r in final_picks])
+                        ai_prompt = "\n".join([f"[{r.get('実行者','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI予知:{r.get('AI直感','')}] " + ",".join([str(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1)]) for r in final_picks])
                         
                         prompt = f"""
                         {AWAKENED_SCIENTIST_PROMPT}
@@ -699,7 +749,8 @@ elif st.session_state.menu == "最終予測決定":
                             model = genai.GenerativeModel(get_ai_model_name(), system_instruction=AWAKENED_SCIENTIST_PROMPT)
                             res = model.generate_content(prompt)
                             st.markdown(f"#### 🎯 最終決断レポート（10億捕捉の{buy_count}口）")
-                            st.dataframe(pd.DataFrame(final_picks)[["実行者", "口数", "数字1", "数字2", "数字3", "数字4", "数字5", "数字6", "数字7", "社会情勢", "霊的要素", "AI直感", "予測ロジック"]])
+                            display_cols = ["実行者", "口数"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["社会情勢", "霊的要素", "AI直感", "予測ロジック"]
+                            st.dataframe(pd.DataFrame(final_picks)[display_cols])
                             st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
                             st.write("▼ 最強予知科学者（Gemini）からの絶対的予言レポート")
                             st.write(res.text)
@@ -712,7 +763,8 @@ elif st.session_state.menu == "最終予測決定":
                             df_history = pd.concat([new_history, df_history], ignore_index=True) if not df_history.empty else new_history
                             save_sheet("決断記録簿", df_history)
                             st.success("決断内容は『決断記録簿』に強固に保管されました。10億円の引き寄せは完了しました！")
-                        except Exception as e: st.error(f"エラー: {e}")
+                        except Exception as e: 
+                            st.error(f"AIによる最終決断レポートの生成に失敗しました: {e}")
 
 elif st.session_state.menu == "結果発表と振り返り":
     st.title("🔄 答え合わせと地球規模の反省会")
@@ -739,7 +791,7 @@ elif st.session_state.menu == "結果発表と振り返り":
         if df_target.empty: st.info("予測データがありません。")
         else:
             st.write("※ 最新データ取得時に自動で採点された結果です。")
-            display_cols = ["AIの助言", "実行者", "口数", "数字1", "数字2", "数字3", "数字4", "数字5", "数字6", "数字7", "社会情勢", "霊的要素"]
+            display_cols = ["AIの助言", "実行者", "口数"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["社会情勢", "霊的要素"]
             st.dataframe(df_target[[c for c in display_cols if c in df_target.columns]], height=400)
 
     with tab2:
@@ -758,7 +810,7 @@ elif st.session_state.menu == "結果発表と振り返り":
             elif df_target.empty: st.warning("対象回号のデータがありません。")
             else:
                 with st.spinner("実際の地球が出した答えと、我々の多角的予測とのズレを天才科学者が徹底分析中..."):
-                    target_txt = "\n".join([f"{r['実行者']} / 社会:{r.get('社会情勢','')} / 霊的:{r.get('霊的要素','')} -> {r['数字1']},{r['数字2']},{r['数字3']}... (結果:{r['AIの助言']})" for _, r in df_target.iterrows()])
+                    target_txt = "\n".join([f"{r['実行者']} / 社会:{r.get('社会情勢','')} / 霊的:{r.get('霊的要素','')} -> " + ",".join([str(r.get(f"数字{i}", "")) for i in range(1, LOTO_PICK_COUNT + 1)]) + f" (結果:{r['AIの助言']})" for _, r in df_target.iterrows()])
                     
                     # 回号文字列から数値を抽出して実データと照合
                     rev_num = re.findall(r'\d+', t_round_rev_str)
@@ -779,7 +831,8 @@ elif st.session_state.menu == "結果発表と振り返り":
                         st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
                         st.write(res.text)
                         st.markdown("</div>", unsafe_allow_html=True)
-                    except Exception as e: st.error(f"エラー: {e}")
+                    except Exception as e: 
+                        st.error(f"反省会レポートの生成中にエラーが発生しました。詳細: {e}")
 
     with tab3:
         df_history = load_sheet("決断記録簿")
@@ -803,10 +856,12 @@ elif st.session_state.menu == "万能AI占い師の館":
             st.session_state.fortune_messages = [
                 {"role": "assistant", "content": "ようこそ、神秘の部屋へ。✨\n私は世界中のあらゆる占術をマスターし、「視覚」も持った最強の占い師です。\n\n今日は何の占いをしますか？下のメニューから選んでくださいね。"}
             ]
+        if "fortune_chat_session" not in st.session_state:
             try:
                 model = genai.GenerativeModel(get_ai_model_name(), system_instruction=FORTUNE_CHAT_PROMPT)
                 st.session_state.fortune_chat_session = model.start_chat(history=[])
-            except: pass
+            except Exception as e: 
+                st.error(f"AI占い師の準備に失敗しました。時間をおいて再試行してください: {e}")
 
         c1, c2 = st.columns([3, 1])
         div_list = ["西洋占星術（ホロスコープ）", "四柱推命", "タロット占い", "手相（要写真）", "人相（要写真）", "オーラ鑑定（要写真）", "コーヒー占い（要写真）"]
@@ -816,12 +871,15 @@ elif st.session_state.menu == "万能AI占い師の館":
                 user_msg = f"「{selected_div}」をお願いします。"
                 st.session_state.fortune_messages.append({"role": "user", "content": user_msg})
                 with st.spinner("星の声を聴いています..."):
-                    try:
-                        response = st.session_state.fortune_chat_session.send_message(user_msg, safety_settings=SAFETY_SETTINGS)
-                        reply = response.text if response.text else "（波動が乱れました。別の言葉でお試しください）"
-                        st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
-                    except Exception as e:
-                        st.session_state.fortune_messages.append({"role": "assistant", "content": f"エラーが発生しました: {e}"})
+                    if "fortune_chat_session" in st.session_state:
+                        try:
+                            response = st.session_state.fortune_chat_session.send_message(user_msg, safety_settings=SAFETY_SETTINGS)
+                            reply = response.text if response.text else "（波動が乱れました。別の言葉でお試しください）"
+                            st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
+                        except Exception as e:
+                            st.session_state.fortune_messages.append({"role": "assistant", "content": f"（通信エラーが発生しました。再度お試しください: {e}）"})
+                    else:
+                        st.session_state.fortune_messages.append({"role": "assistant", "content": "AI占い師が準備できていません。リセットをお試しください。"})
                 st.rerun()
 
         with st.form("chat_input_form", clear_on_submit=True):
@@ -849,19 +907,22 @@ elif st.session_state.menu == "万能AI占い師の館":
                     st.session_state.fortune_messages.append({"role": "user", "content": display_msg})
                     
                     with st.spinner("星の導きを読み解いています..."):
-                        try:
-                            if img_source:
-                                img = Image.open(img_source).convert('RGB')
-                                img.thumbnail((800, 800))
-                                msg_to_send = [user_input, img]
-                            else:
-                                msg_to_send = user_input
+                        if "fortune_chat_session" in st.session_state:
+                            try:
+                                if img_source:
+                                    img = Image.open(img_source).convert('RGB')
+                                    img.thumbnail((800, 800))
+                                    msg_to_send = [user_input, img]
+                                else:
+                                    msg_to_send = user_input
 
-                            response = st.session_state.fortune_chat_session.send_message(msg_to_send, safety_settings=SAFETY_SETTINGS)
-                            reply = response.text if response.text else "（大いなる力により、言葉がブロックされました）"
-                            st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
-                        except Exception as e:
-                            st.session_state.fortune_messages.append({"role": "assistant", "content": f"エラーが発生しました: {e}"})
+                                response = st.session_state.fortune_chat_session.send_message(msg_to_send, safety_settings=SAFETY_SETTINGS)
+                                reply = response.text if response.text else "（大いなる力により、言葉がブロックされました）"
+                                st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
+                            except Exception as e:
+                                st.session_state.fortune_messages.append({"role": "assistant", "content": f"（通信エラーが発生しました。再度お試しください: {e}）"})
+                        else:
+                            st.session_state.fortune_messages.append({"role": "assistant", "content": "AI占い師が準備できていません。リセットをお試しください。"})
                     st.rerun()
 
         st.markdown("---")
