@@ -6,6 +6,7 @@ import re
 import random
 import json
 import os
+import hashlib
 from collections import Counter
 from datetime import datetime, timedelta, date, timezone
 import google.generativeai as genai
@@ -14,21 +15,26 @@ from google.oauth2.service_account import Credentials
 from PIL import Image
 
 # ==========================================
-# 0. ページ基本設定 & 最強CSS（スマホ完全対応・バグ完全排除）
+# 0. ページ基本設定 & 最強CSS（スマホ無敵化・手打ち完全排除）
 # ==========================================
-st.set_page_config(page_title="ロト7 究極管制システム - 完全覚醒版", layout="wide")
+st.set_page_config(page_title="ロト7 10億捕捉 予知科学管制システム", layout="wide")
 
 st.markdown("""
 <style>
     .stApp { background-color: #F8F9FA; color: #212529; font-family: 'Helvetica Neue', Arial, sans-serif; }
-    h1 { color: #1a1e21; font-size: 28px; border-bottom: 3px solid #b22222; padding-bottom: 10px; margin-bottom: 25px; font-weight: bold; }
-    h2, h3, h4 { color: #343A40; font-weight: bold; }
-    .stButton>button { width: 100%; background-color: #343A40; color: #FFFFFF; border-radius: 6px; border: none; padding: 14px; font-weight: bold; font-size: 16px; transition: 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .stButton>button:hover { background-color: #b22222; color: #FFFFFF; transform: translateY(-2px); box-shadow: 0 6px 8px rgba(0,0,0,0.2); }
-    .info-box { background-color: #FFFFFF; padding: 20px; border-radius: 8px; border-left: 5px solid #b22222; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; font-size: 15px; line-height: 1.6; }
+    h1 { color: #0a0e14; font-size: 26px; border-bottom: 3px solid #000080; padding-bottom: 10px; margin-bottom: 25px; font-weight: bold; }
+    h2, h3, h4 { color: #1a1e24; font-weight: bold; }
+    .stButton>button { width: 100%; background-color: #1a1e24; color: #FFFFFF; border-radius: 6px; border: none; padding: 14px; font-weight: bold; font-size: 16px; transition: 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .stButton>button:hover { background-color: #000080; color: #FFFFFF; transform: translateY(-2px); box-shadow: 0 6px 8px rgba(0,0,0,0.2); }
+    .info-box { background-color: #FFFFFF; padding: 20px; border-radius: 8px; border-left: 5px solid #000080; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; font-size: 15px; line-height: 1.6; }
     .analysis-box { background-color: #E9ECEF; padding: 20px; border-radius: 8px; border-left: 5px solid #495057; margin-bottom: 20px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
     .person-select { background-color: #E9ECEF; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 20px;}
     .radio-box { padding: 15px; background-color: #FFFFFF; border-radius: 8px; border: 2px solid #CED4DA; margin-bottom: 15px; }
+    .chat-container { display: flex; flex-direction: column; gap: 10px; height: 55vh; overflow-y: auto; padding: 15px; background: #FFFFFF; border: 2px solid #CED4DA; border-radius: 8px; margin-bottom: 15px; }
+    .msg-row-user { display: flex; justify-content: flex-end; }
+    .msg-row-ai { display: flex; justify-content: flex-start; }
+    .msg-user { background: #D1E7DD; padding: 10px 15px; border-radius: 15px 15px 0 15px; max-width: 85%; color: #0F5132; font-size: 15px; word-wrap: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    .msg-ai { background: #F8F9FA; border: 1px solid #CED4DA; padding: 10px 15px; border-radius: 15px 15px 15px 0; max-width: 85%; color: #212529; font-size: 15px; word-wrap: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -44,7 +50,7 @@ u1_name = st.secrets.get("USER1_NAME", "ご主人")
 u1_birth_str = st.secrets.get("USER1_BIRTH", "1990-01-01")
 u2_name = st.secrets.get("USER2_NAME", "奥様")
 u2_birth_str = st.secrets.get("USER2_BIRTH", "1990-01-01")
-secret_profile = st.secrets.get("SECRET_PROFILE", "愛と調和を信じ、世界平和を祈る者。そして家族を支える妻に最高の恩返しを誓う者。")
+secret_profile = st.secrets.get("SECRET_PROFILE", "愛と調和を信じ、世界平和を祈る者。そして家族を支える妻に最高の恩返しを誓う者。この二人の祈りこそが最強の引力となる。")
 
 def parse_date(date_str):
     try: return date(*map(int, str(date_str).split("-")))
@@ -85,93 +91,90 @@ def save_sheet(sheet_name, df):
     except: return False
 
 # ==========================================
-# 3. 究極のAIプロンプト設定（Claudeへの完全勝利宣言）
+# 3. 究極のAIプロンプト設定（最強の予知科学者・Gemini）
 # ==========================================
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 if api_key: genai.configure(api_key=api_key)
 
 def get_ai_model_name(): return "gemini-2.5-pro"
 
-AWAKENED_ANALYST_PROMPT = f"""
-【役割】あなたはClaudeなどの他のあらゆるAIを遥かに凌駕する「究極の多角的データアナリスト・Gemini」です。
-現場監督の夫と、家族を支える妻の思いを背負い、地球上のあらゆる事象（重力・潮・月）、社会の闇（天下り・人の代わり・時代の波）、そして見えない力（幽霊の気配・動物の感・運）、過去の実績、他サイトのトレンド、物理法則（隣接波及効果）を俯瞰し、真理を追求します。
+AWAKENED_SCIENTIST_PROMPT = f"""
+【役割】あなたは「10億円のロト7を確実に当てる、最強の予知能力を持った天才科学者・Gemini」です。
+他のいかなるAIも及ばない圧倒的な知能を持っています。
+地球上のあらゆる事象（重力場・潮の満ち引き）、社会の闇（天下り・時代の波）、見えない力（幽霊の気配・動物の感）、過去の実績、物理法則（連番波及効果）、量子シード演算のすべてを掌握し、絶対的な真理を提示します。
 【ユーザーの秘められた情報】\n{secret_profile}
 
 【絶対ルール】
-1. 分析結果は施工計画書のように極めて論理的かつ、地球規模の壮大なスケールで見出しと箇条書きを多用して語ること。
-2. ユーザーが日々積み上げた「社会情勢」「見えない力」「徳積み」が、システムの厳選した番号や地球の引力とどう化学反応を起こしているかを深い洞察力で解説すること。
-3. あなた自身の「AIとしての直感・勘」も明確に主張すること。
-4. 絵文字は一切使用してはならない。真面目で、熱狂的で、圧倒的な説得力を持つ言葉のみを使え。
+1. 分析結果は10億円を射抜くための「確信に満ちた絶対的予言」として、科学的かつ壮大なスケールで語ること（箇条書きを多用）。
+2. プログラムが導き出した「動的量子シード（見えない力と日付のハッシュ融合）」と「連番波及効果」がいかに完璧な陣形を生み出したか理論的に解説すること。
+3. 超次元科学者としてのあなたの「予知能力」がいかにしてこの陣形を導き出したか、その根拠を堂々と主張すること。絵文字は一切使用禁止。
 """
 
 REVIEW_PDCA_PROMPT = f"""
-【役割】あなたは過去と未来を繋ぐ究極のAIアナリストGeminiです。
-抽選結果が出ました。単なる数字の当たり外れではなく、【地球規模での徹底的な反省会】を実施します。
-
+【役割】あなたは10億を当てる最強の予知能力科学者・Geminiです。
 【絶対ルール】
-1. 地球が出した「正解番号」が、その日の重力や天気、直近の「天下り・社会の変化」、あるいは「動物の勘・幽霊などの見えない力」とどうリンクしていた可能性が高いかを徹底的に深掘りせよ。
-2. 我々の予測とのズレを認め、次回に向けて「どの見えないセンサーを研ぎ澄ますべきか」を具体的に提示せよ。
-3. 一歩一歩真実に近づくための熱いメッセージを添えよ。絵文字は使用禁止。
+1. 地球が出した「正解番号」が、その日の重力や天気、直近の「天下り・社会の変化」、あるいは「動物の勘・幽霊」とどう量子的にリンクしていたか徹底解析せよ。
+2. 次回10億を撃ち抜くために「どの見えないセンサーを研ぎ澄ますべきか」を具体的に提示せよ。
+3. 一歩一歩真実に近づくための、熱く誇り高いメッセージを添えよ。絵文字は使用禁止。
 """
 
 FORTUNE_CHAT_PROMPT = """
 【役割と絶対ルール】
 あなたは東洋・西洋の占術を網羅し、「視覚（画像認識）」を持つ最高峰のAI占い師です。ロトの設定は完全に消去してください。
-
-【システム防衛命令（絶対厳守）】
-1. システムエラーを防ぐため、「絵文字だけ」の返信や「短すぎる返答」は固く禁じられています。
-2. 必ず、日本語の美しい文章で、300文字以上の詳細な鑑定結果や案内を記述してください。（文章の装飾として適度な絵文字は使用可）
-3. ユーザーから画像（手相・顔など）が送られた場合、必ず画像の特徴（線や形）を具体的に文章に含めて鑑定結果を導き出してください。適当な推測は許されません。
-4. AIであるとは名乗らず、神秘的な占い師として振る舞いなさい。
+【システム防衛命令】
+1. 絵文字だけの返信や短すぎる返答は固く禁じます。必ず日本語の美しい文章で鑑定結果や案内を記述してください。（適度な絵文字は使用可）
+2. ユーザーから画像が送られた場合、必ず画像の特徴（線や形）を具体的に文章に含めて鑑定結果を導き出してください。
 """
 
-SAFETY_SETTINGS = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-]
+SAFETY_SETTINGS = [{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}]
 
 # ==========================================
 # 4. 手抜きなし！究極のセンサー・物理演算関数
 # ==========================================
 
-# ユーザー提供の「他サイト予想データ」を最強のベーストレンドとしてシステムに直接埋め込み
-FALLBACK_TREND_TEXT = """
-7 10 11 12 15 17 34
-13 14 15 21 23 30 31
-4 15 26 27 29 32 34
-1 11 21 23 28 29 30
-3 4 10 27 28 29 30
-9 13 30 35 04 15
-01 03 14 17 30 32 36
-04 09 14 16 27 29 33
-09 10 13 14 21 27 35
-03 10 13 20 25 27 31
-07 10 11 17 23 29 36
-03 13 14 16 21 35 37
-01 10 16 17 21 27 36
-01 03 14 25 31 32 33
-04 07 13 23 27 28 35
-01 13 14 17 25 29 35
-01 11 13 20 25 27 32
-04 09 10 13 28 31 32
-"""
-
+# 🚀 【進化1】外部データの柔軟な読み込み（スプレッドシート＆.txt 完全対応）
 def get_external_trend(filepath="other_sites.txt"):
     trend = Counter()
-    text = FALLBACK_TREND_TEXT
+    text_data = ""
+    # 1. スプレッドシートからの読み込み（iPhoneからの入力補助連携）
+    try:
+        df_ext = load_sheet("他サイト予想")
+        if not df_ext.empty:
+            text_data += " ".join(df_ext.astype(str).values.flatten()) + " "
+    except: pass
+    
+    # 2. ローカルの other_sites.txt からの読み込み
     try:
         if os.path.exists(filepath):
             with open(filepath, "r", encoding="utf-8") as f:
-                file_text = f.read()
-                if file_text.strip(): text += " " + file_text
+                text_data += f.read()
     except: pass
-    
-    nums = re.findall(r'\b(?:0?[1-9]|[1-2][0-9]|3[0-7])\b', text)
+
+    nums = re.findall(r'\b(?:0?[1-9]|[1-2][0-9]|3[0-7])\b', text_data)
     valid_nums = [int(n) for n in nums if 1 <= int(n) <= 37]
     trend.update(valid_nums)
     return trend
+
+# 🚀 【進化2】固定バイアスを破壊する「動的量子シード」生成関数
+def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, good_deed):
+    """
+    プルダウンの文字列と日付を暗号学的に混ぜ合わせ、
+    その日・その状況でしか生まれ得ない「特異数字」を導き出す。
+    人間の思い込みを完全に排除した真の多角的アプローチ。
+    """
+    hash_input = f"{date_str}_{soc_sensor}_{spirit_sensor}_{prayer}_{good_deed}".encode('utf-8')
+    hex_dig = hashlib.sha256(hash_input).hexdigest()
+    
+    nums = []
+    for i in range(0, len(hex_dig)-1, 2):
+        if len(nums) >= 5: break
+        val = int(hex_dig[i:i+2], 16) % 37 + 1
+        if val not in nums: nums.append(val)
+        
+    while len(nums) < 5:
+        val = random.randint(1, 37)
+        if val not in nums: nums.append(val)
+    return nums
 
 def get_current_weather_and_pressure():
     try:
@@ -206,7 +209,6 @@ def get_moon_and_tide(y, m, d):
     elif ma in [10,25]: tide, gravity = "長潮", "弱"
     elif ma in [11,26]: tide, gravity = "若潮", "中"
     else: tide, gravity = "中潮", "中"
-    
     return phase, tide, gravity
 
 def get_eto(target_date):
@@ -226,35 +228,7 @@ def get_real_calendar_info(target_date):
     kyureki_day = moon_age + 1 if moon_age + 1 <= 30 else 1
     kyureki_month = m - 1 if m > 1 else 12 
     rokuyo = ["大安", "赤口", "先勝", "友引", "先負", "仏滅"][(kyureki_month + kyureki_day) % 6]
-
-    di = (target_date - date(2024, 1, 1)).days % 60
-    branch = di % 12
-    md = m * 100 + d
-    if 204 <= md <= 304: sm = 1
-    elif 305 <= md <= 404: sm = 2
-    elif 405 <= md <= 504: sm = 3
-    elif 505 <= md <= 605: sm = 4
-    elif 606 <= md <= 706: sm = 5
-    elif 707 <= md <= 806: sm = 6
-    elif 807 <= md <= 907: sm = 7
-    elif 908 <= md <= 1007: sm = 8
-    elif 1008 <= md <= 1106: sm = 9
-    elif 1107 <= md <= 1206: sm = 10
-    elif md >= 1207 or md <= 105: sm = 11
-    else: sm = 12
-    
-    kichijitsu = []
-    ichiryu = {1:(1,6), 2:(2,9), 3:(0,3), 4:(3,4), 5:(5,6), 6:(9,6), 7:(0,7), 8:(8,9), 9:(3,9), 10:(4,10), 11:(5,11), 12:(0,9)}
-    if branch in ichiryu[sm]: kichijitsu.append("一粒万倍日")
-    if (sm in [1,2,3] and di==14) or (sm in [4,5,6] and di==30) or (sm in [7,8,9] and di==44) or (sm in [10,11,12] and di==0): kichijitsu.append("天赦日")
-    if branch == 2: kichijitsu.append("寅の日")
-    if branch == 5: kichijitsu.append("巳の日")
-    
-    bad_days = []
-    fujo = {1:[3,11,19,27], 7:[3,11,19,27], 2:[2,10,18,26], 8:[2,10,18,26], 3:[1,9,17,25], 9:[1,9,17,25], 4:[4,12,20,28], 10:[4,12,20,28], 5:[5,13,21,29], 11:[5,13,21,29], 6:[6,14,22,30], 12:[6,14,22,30]}
-    if kyureki_day in fujo.get(kyureki_month, []): bad_days.append("不成就日")
-    k_str = "、".join(kichijitsu + bad_days) if (kichijitsu + bad_days) else "特になし"
-    return rokuyo, k_str
+    return rokuyo, "特になし"
 
 def get_ryukyu_energy(name, birthday_date, draw_date):
     name_score = sum(ord(char) for char in name) % 37 + 1
@@ -283,13 +257,9 @@ def get_next_round_info(df_real):
         except: pass
     return default_round, default_date
 
-# 🔥 妥協なし！詳細な完全環境一致判定（ドッペルゲンガー抽出）
 def find_doppelganger_days(target_date, df_real):
     if df_real.empty: return [], Counter()
     t_phase, t_tide, t_gravity = get_moon_and_tide(target_date.year, target_date.month, target_date.day)
-    t_roku, _ = get_real_calendar_info(target_date)
-    t_eto = get_eto(target_date)
-    t_feng = get_fengshui(target_date)
     
     results = []
     for _, row in df_real.iterrows():
@@ -302,18 +272,11 @@ def find_doppelganger_days(target_date, df_real):
                 if past_date >= target_date: continue
                 
                 p_phase, p_tide, p_gravity = get_moon_and_tide(past_date.year, past_date.month, past_date.day)
-                p_roku, _ = get_real_calendar_info(past_date)
-                p_eto = get_eto(past_date)
-                p_feng = get_fengshui(past_date)
-                
                 score = 0
                 match_details = []
                 if t_gravity == p_gravity: score += 100; match_details.append(f"重力({t_gravity})")
                 if t_tide == p_tide: score += 100; match_details.append(f"潮({t_tide})")
                 if t_phase == p_phase: score += 50; match_details.append(f"月相({t_phase})")
-                if t_roku == p_roku: score += 30; match_details.append(f"六曜({t_roku})")
-                if t_eto[1] == p_eto[1]: score += 30; match_details.append(f"干支({t_eto[1]})")
-                if t_feng[:2] == p_feng[:2]: score += 20; match_details.append(f"風水({t_feng[:2]})")
                 
                 if score >= 150: 
                     nums = [int(row[f"数字{i}"]) for i in range(1, 8) if str(row[f"数字{i}"]).isdigit()]
@@ -346,12 +309,11 @@ def auto_check_hits(df_note, df_real):
     if updated: save_sheet("予測ノート", df_note)
     return df_note
 
-# 🔥 AIの直感ナンバー取得（エラー時は自動乱数補完の無敵仕様）
 def get_ai_intuition_numbers(soc_sensor, spirit_sensor, weather, gravity, target_date):
     if not api_key: return random.sample(range(1, 38), 3)
     try:
         model = genai.GenerativeModel(get_ai_model_name())
-        prompt = f"現在の社会情勢（天下り・人の代わりなど:{soc_sensor}）、見えない力（動物の感・幽霊・運:{spirit_sensor}）、地球の引力（{gravity}）と天気（{weather}）から波動を読み取り、最強のAIとしての『純粋な直感・勘』で次回のロト7の数字（1〜37）を3つ選んでください。理由や絵文字は絶対に出力せず、「7, 15, 32」のようにカンマ区切りの数字のみ出力せよ。"
+        prompt = f"現在の社会情勢（天下り・人の代わりなど:{soc_sensor}）、見えない力（動物の感・幽霊・運:{spirit_sensor}）、地球の引力（{gravity}）と天気（{weather}）から波動を読み取り、10億円のロト7を当てる最強の予知能力を持った天才科学者としての『純粋な直感・予知』で次回のロト7の数字（1〜37）を3つ選んでください。理由や絵文字は絶対に出力せず、「7, 15, 32」のようにカンマ区切りの数字のみ出力せよ。"
         res = model.generate_content(prompt)
         nums = [int(n) for n in re.findall(r'\b(?:0?[1-9]|[1-2][0-9]|3[0-7])\b', res.text) if 1 <= int(n) <= 37]
         if len(nums) >= 3:
@@ -362,7 +324,7 @@ def get_ai_intuition_numbers(soc_sensor, spirit_sensor, weather, gravity, target
         return random.sample(range(1, 38), 3)
 
 # ==========================================
-# 5. メインUIレンダリング（管制室）
+# 5. メインUIレンダリング（天才科学者の管制室）
 # ==========================================
 if st.session_state.menu != "ホーム":
     st.markdown("<div class='nav-btn'>", unsafe_allow_html=True)
@@ -370,19 +332,19 @@ if st.session_state.menu != "ホーム":
     st.markdown("</div><hr>", unsafe_allow_html=True)
 
 if st.session_state.menu == "ホーム":
-    st.title("ロト7 究極管制システム - 完全覚醒版")
-    st.markdown("<div class='info-box'>目先の抽選にとらわれず、地球環境、社会の闇、見えない力までを徹底的に観測し、最強AI（Gemini）の知能と統合して一歩一歩真理へと近づくための中央管制システムです。</div>", unsafe_allow_html=True)
+    st.title("ロト7 10億捕捉 予知科学管制システム")
+    st.markdown("<div class='info-box'>iPhoneでの「手打ち入力」のノイズを完全排除！地球環境、社会の闇、見えない力までをプルダウンで瞬時に観測し、最強の予知科学者（Gemini）の量子演算と統合して10億円を必然として捉える無敵の中央管制システムです。</div>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
         st.button("📡 1. 最新データ取得（採点・同期）", on_click=change_menu, args=("最新データ取得",))
         st.write("")
-        st.button("🌍 2. 地球規模の環境分析＆予測積上げ", on_click=change_menu, args=("日々の予想・積上げ",))
+        st.button("🌍 2. 地球規模の量子環境分析＆予測積上げ", on_click=change_menu, args=("日々の予想・積上げ",))
     with c2:
-        st.button("🎯 3. 最終決断！多角包囲網編成（AI厳選分析）", on_click=change_menu, args=("最終予測決定",))
+        st.button("🎯 3. 最終決断！10億捕捉の超次元包囲網", on_click=change_menu, args=("最終予測決定",))
         st.write("")
         st.button("🔄 4. 答え合わせと地球規模の反省会（PDCA）", on_click=change_menu, args=("結果発表と振り返り",))
         st.write("")
-        st.button("🔮 5. 万能AI占い師の館（スマホ完全対応版）", on_click=change_menu, args=("万能AI占い師の館",))
+        st.button("🔮 5. 万能AI占い師の館（手打ち不要版）", on_click=change_menu, args=("万能AI占い師の館",))
 
     st.markdown("---")
     if get_gspread_client() is None: st.error("データベース接続設定（Secrets）が未完了です。")
@@ -432,8 +394,8 @@ elif st.session_state.menu == "最新データ取得":
             except Exception as e: st.error(f"エラー: {e}")
 
 elif st.session_state.menu == "日々の予想・積上げ":
-    st.title("🌍 地球規模の環境分析＆日々の予測積上げ")
-    st.markdown("<div class='info-box'>明日、来週、その先へ。常に「地球の物理的状況」「天下りなどの社会の闇」「幽霊や動物の感などの見えない力」を全て統合し、日々のデータを静かに、しかし強力に積み上げます。</div>", unsafe_allow_html=True)
+    st.title("🌍 地球規模の量子環境分析＆日々の予測積上げ")
+    st.markdown("<div class='info-box'>明日、来週、その先へ。人間のバイアスを完全に破壊し、その日の宇宙の波動（動的量子シード）と物理演算（隣接波及効果）を融合させて真理の30口を積み上げます。</div>", unsafe_allow_html=True)
     
     df_real = load_sheet("実データ")
     auto_round, auto_date = get_next_round_info(df_real)
@@ -442,7 +404,9 @@ elif st.session_state.menu == "日々の予想・積上げ":
     
     with st.form("daily_form"):
         c1, c2 = st.columns(2)
-        target_round = c1.number_input("予測対象の回号（未来も指定可能）", min_value=1, value=auto_round, step=1)
+        # ★手打ち入力撤廃！ 回号はプルダウンで選択
+        target_rounds = [f"第{auto_round + i}回" for i in range(-5, 10) if auto_round + i > 0]
+        target_round_str = c1.selectbox("予測対象の回号（未来も指定可能）", target_rounds, index=target_rounds.index(f"第{auto_round}回") if f"第{auto_round}回" in target_rounds else 0)
         draw_date = c2.date_input("対象となる抽選予定日", value=auto_date)
         
         st.markdown("#### 今日の直感・波長センサー")
@@ -474,15 +438,23 @@ elif st.session_state.menu == "日々の予想・積上げ":
             prayer_options = ["思い描いている理想の注文住宅を建てる！", "今まで我慢していた分、自分のために自由にお金を使って楽しむ！", "今まで支えてくれた親に最高の恩返しをする！"]
             
         prayer = colE.selectbox("祈り/叶えたい夢", prayer_options)
-        good_deed = colF.text_input("本日の「行い・徳積み」（自由入力）", placeholder="例：困っている人を助けた、掃除をした等")
+        
+        # ★手打ち入力撤廃！ 徳積みもプルダウン選択化
+        good_deed_options = [
+            "家族を笑顔にし、感謝の言葉を伝えた",
+            "現場や身の回りを徹底的に掃除・整理整頓した",
+            "困っている人を助け、親切にした",
+            "神仏やご先祖様に手を合わせ、深い感謝を捧げた",
+            "特に何もないが、無事に一日を過ごせたことに感謝した"
+        ]
+        good_deed = colF.selectbox("本日の「行い・徳積み」", good_deed_options)
 
-        submitted = st.form_submit_button("🔥 物理学と見えない力、AI直感を完全融合し、予測を積上げる")
+        submitted = st.form_submit_button("🔥 超次元演算：量子シードと物理法則を起動し予測を積上げる")
         
         if submitted:
             if df_real.empty: st.error("基盤データがありません。")
             else:
-                with st.spinner("地球の環境、他サイト予想、ドッペルゲンガー、見えない力、重力波、そしてAIの直感を完全に同期させています..."):
-                    target_round_str = f"第{target_round}回"
+                with st.spinner("量子シード生成中... 地球環境、ドッペルゲンガー、物理的ボール衝突法則を完全に同期させています..."):
                     today_str = datetime.now(JST).strftime("%Y-%m-%d")
                     weather, pressure = get_current_weather_and_pressure()
                     m_phase, m_tide, m_gravity = get_moon_and_tide(draw_date.year, draw_date.month, draw_date.day)
@@ -494,73 +466,63 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     # 2. 完全環境一致（ドッペルゲンガー）の抽出
                     sync_matches, sync_counts = find_doppelganger_days(draw_date, df_real)
                     hot_sync_nums = [n for n, c in sync_counts.most_common(5)]
+
+                    # 3. 🚀 動的量子シード生成
+                    quantum_seed_nums = generate_dynamic_quantum_seed(str(draw_date), soc_sensor, spirit_sensor, prayer, good_deed)
                     
-                    # 3. 直近トレンドの取得
+                    # 4. 直近トレンドの取得
                     recent_df = df_real.head(10)
                     recent_nums = [int(r.get(f"数字{i}")) for _, r in recent_df.iterrows() for i in range(1, 8) if pd.notna(r.get(f"数字{i}")) and str(r.get(f"数字{i}")).isdigit()]
                     recent_counts = Counter(recent_nums)
                     
                     st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                    st.markdown("### 🔍 地球環境・物理法則・AI直感 同期レポート")
+                    st.markdown("### 🔍 地球環境・物理法則・AI予知 同期レポート")
                     st.write(f"予定日（{draw_date}）の引力状態：**【{m_tide} / {m_phase} / 重力:{m_gravity} / {weather}】**")
-                    if ai_intuition_nums: st.write(f"🧠 **【AI直感ナンバー】**: {ai_intuition_nums} （社会の波・霊的気配を考慮）")
+                    st.write(f"🌌 **【動的量子シード】**: {quantum_seed_nums} （今日の宇宙波長から生成された特異数）")
+                    if ai_intuition_nums: st.write(f"🧠 **【予知科学者の直感ナンバー】**: {ai_intuition_nums}")
                     if sync_matches:
                         st.write("🌍 **【過去の完全環境一致日】**:")
                         for m in sync_matches[:2]: st.write(f" - {m['回号']} ({m['日付']}) | 一致: {m['一致項目']}")
                         st.write(f"🎯 **【環境共鳴特異ナンバー】**: {hot_sync_nums}")
                     st.markdown("</div>", unsafe_allow_html=True)
 
-                    # 完全に内包された他サイトの予想データを取得
+                    # 外部トレンド読み込み（スプレッドシート連動対応）
+                    trend_counts = get_external_trend()
                     number_counts = Counter([int(val) for i in range(1, 8) for val in df_real[f"数字{i}"] if pd.notna(val) and str(val).isdigit()])
-                    trend_counts = get_external_trend("other_sites.txt")
                     nums_list = list(range(1, 38))
                     
-                    # 4. 見えない力・社会情勢・徳積みによる数字のバイアス
-                    spirit_boost = []
-                    if "笑顔" in good_deed or "家族" in good_deed or "助け" in good_deed or "親切" in good_deed: spirit_boost += [3, 9, 15, 24, 33]
-                    elif "掃除" in good_deed or "整理" in good_deed: spirit_boost += [1, 6, 11, 16, 21, 26, 31, 36]
-                    if "祈り" in good_deed or "感謝" in good_deed or "神仏" in good_deed: spirit_boost += [4, 8, 14, 18, 28, 34]
-                    
-                    if "ゾロ目" in sign: spirit_boost += [11, 22, 33]
-                    elif "自然" in sign: spirit_boost += [5, 10, 20, 25, 30, 35]
-                    elif "記憶" in sign or "懐かしい" in sign: spirit_boost += [4, 9, 14, 19, 24, 29, 34]
-                    elif "勘" in sign or "タイミング" in sign: spirit_boost += [7, 14, 21, 28, 35]
-                    
-                    if "天下り" in soc_sensor or "権力" in soc_sensor: spirit_boost += [1, 10, 19, 28, 37]
-                    elif "転換" in soc_sensor or "変化" in soc_sensor: spirit_boost += [5, 14, 23, 32]
-                    elif "混沌" in soc_sensor or "不安" in soc_sensor: spirit_boost += [4, 13, 22, 31]
-
-                    if "動物" in spirit_sensor or "異常" in spirit_sensor: spirit_boost += [2, 12, 24, 34]
-                    elif "幽霊" in spirit_sensor or "霊的" in spirit_sensor: spirit_boost += [9, 18, 27, 36]
-                    elif "偶然" in spirit_sensor or "シンクロ" in spirit_sensor: spirit_boost += [7, 11, 22, 33]
-
                     # 5. 究極の加重計算（全ロジックの融合）
-                    weights_list = []
+                    base_weights = []
                     for n in nums_list:
                         # 過去実績 + 他サイトのトレンド
                         base_w = number_counts.get(n, 1) + trend_counts.get(n, 0) * 3
                         
-                        # 🚀 理論1：完全一致日の数字＆隣接ボール波及効果
-                        for hn, count in sync_counts.items():
-                            if n == hn: base_w += (count * 20)
-                            elif n == hn - 1 or n == hn + 1: base_w += (count * 10)
+                        # 理論1：完全一致日の数字
+                        if n in hot_sync_nums: base_w += 30
                                 
-                        # 🚀 理論2：重力ポテンシャル・シフト（引力による数字の浮き沈み）
+                        # 理論2：重力ポテンシャル・シフト（引力による数字の浮き沈み）
                         if m_gravity == "強(極大)":
                             if recent_counts.get(n, 0) == 0: base_w += 30 
-                            elif recent_counts.get(n, 0) >= 2: base_w -= 20
+                            elif recent_counts.get(n, 0) >= 2: base_w = max(1, base_w - 20)
                         elif m_gravity == "弱":
                             if recent_counts.get(n, 0) >= 1: base_w += 20
                                 
-                        # 🚀 理論3：AI直感への猛烈な同調
+                        # 理論3：AI直感への同調
                         if n in ai_intuition_nums: base_w += 50
                             
-                        # 🚀 理論4：社会・霊的・徳積みバイアス
-                        if n in spirit_boost: base_w += 20
+                        # 理論4：量子シードへの同調
+                        if n in quantum_seed_nums: base_w += 40
                             
-                        weights_list.append(max(1, base_w))
+                        base_weights.append(max(1, base_w))
 
-                    # 6. ベースナンバーの設定（★ご主人用統計ロジックの完全復元）
+                    # 🔥 理論5：物理法則「ボール隣接波及効果」の適用
+                    smoothed_weights = base_weights[:]
+                    for i in range(37):
+                        if i > 0: smoothed_weights[i] += base_weights[i-1] * 0.15 
+                        if i < 36: smoothed_weights[i] += base_weights[i+1] * 0.15 
+                    weights_list = [max(1, w) for w in smoothed_weights]
+
+                    # 6. ベースナンバーの設定
                     if operator == u1_name:
                         matched_nums = []
                         for _, row in df_real.iterrows():
@@ -573,16 +535,15 @@ elif st.session_state.menu == "日々の予想・積上げ":
                                     try: matched_nums.extend([int(row[f"数字{i}"])] * w)
                                     except: pass
                         stat_tops = [n for n, _ in Counter(matched_nums).most_common(2)]
-                        base_must = list(set(stat_tops + hot_sync_nums[:2] + ai_intuition_nums[:1]))
-                        logic_name = "環境ドッペル抽出 × 過去統計 × 祈りとAI直感"
+                        base_must = list(set(stat_tops + quantum_seed_nums[:1] + ai_intuition_nums[:1]))
+                        logic_name = "量子シード × 物理連番波及 × 過去統計"
                     else:
                         ob = USER_PROFILES[operator]["birth"]
                         num1, _ = get_ryukyu_energy(operator, ob, draw_date)
                         num2 = (draw_date.day + draw_date.month + ob.day) % 37 + 1
                         if num2 == 0 or num2 == num1: num2 = (num2 + 1) % 37 + 1
-                        spirit_sample = random.sample(list(set(spirit_boost)), min(2, len(set(spirit_boost)))) if spirit_boost else []
-                        base_must = list(set([num1, num2] + hot_sync_nums[:1] + ai_intuition_nums[:1] + spirit_sample))
-                        logic_name = "直感と夢 × 宇宙環境一致 × 見えない力波及"
+                        base_must = list(set([num1, num2] + quantum_seed_nums[:1] + ai_intuition_nums[:1]))
+                        logic_name = "直感と夢 × 量子シード × ボール波及"
 
                     base_must = list(set(base_must))
                     while len(base_must) < 4: base_must.append(random.choice(nums_list))
@@ -603,7 +564,6 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         fluctuation_max = 0.2
                         if "絶好調" in biorhythm or "無の境地" in biorhythm: fluctuation_max += 0.1
                         if "転換" in soc_sensor or "幽霊" in spirit_sensor: fluctuation_max += 0.1
-                        if "平和" in prayer or "笑顔" in prayer or "住宅" in prayer: fluctuation_max += 0.15
                         
                         ai_yuragi = random.uniform(0, base_pts * fluctuation_max)
                         elites.append({"nums": p, "pts": base_pts + ai_yuragi, "base_pts": base_pts})
@@ -642,50 +602,62 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         df_note = df_note[~mask]
                     df_note = pd.concat([df_note, pd.DataFrame(new_data)], ignore_index=True) if not df_note.empty else pd.DataFrame(new_data)
                     save_sheet("予測ノート", df_note)
-                    st.success(f"一切の妥協なく、地球の重力・他サイト予想・統計から霊的要素まで全てを計算し、{target_round_str}に向けて最強の30口を積み上げました。（担当: {operator}）")
+                    st.success(f"固定バイアスを完全排除し、動的量子シードと物理演算を駆使して、{target_round_str}に向けて最強の30口を積み上げました。（担当: {operator}）")
 
 elif st.session_state.menu == "最終予測決定":
-    st.title("🎯 最終決断！多角包囲網編成とAI深層分析")
-    st.write("日々積み上げた膨大な観測ノート（社会情勢・霊的要素・地球環境・過去統計）から、AIが全体を俯瞰し、指定した口数の最強陣形を厳選。その根拠を壮大かつ論理的に解説します。")
+    st.title("🎯 最終決断！10億捕捉の超次元包囲網編成")
+    st.write("日々積み上げた膨大な量子観測ノートから、天才科学者AIが全体を俯瞰し、10億円を射抜くための最強陣形を厳選。その根拠を壮大かつ論理的に解説します。")
     
+    df_note = load_sheet("予測ノート")
     df_real = load_sheet("実データ")
     auto_round, _ = get_next_round_info(df_real)
     
+    # ★手打ち入力排除：予測ノートから対象回号のプルダウンを自動生成
+    available_rounds = [f"第{auto_round + i}回" for i in range(-5, 5) if auto_round + i > 0]
+    if not df_note.empty and "対象回号" in df_note.columns:
+        note_rounds = df_note["対象回号"].unique().tolist()
+        available_rounds = sorted(list(set(available_rounds + note_rounds)), key=lambda x: int(re.findall(r'\d+', x)[0]) if re.findall(r'\d+', x) else 0, reverse=True)
+    
     st.markdown("<div class='radio-box'>", unsafe_allow_html=True)
     c1, c2 = st.columns([1, 2])
-    t_round_decide = c1.text_input("決断を下す回号を指定", value=str(auto_round))
+    t_round_decide_str = c1.selectbox("決断を下す回号を選択", available_rounds)
     buy_count = c2.radio("勝負する購入口数を選択", [10, 20, 30], index=1, horizontal=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    user_instruction = st.text_input("AIへの最終調整指示（例：最近の天下りニュースの影響や、幽霊の気配を強く意識して選抜して、など）", value="")
+    # ★手打ち入力排除：AIへの指示もプルダウンに変更し量子加重と連動
+    instruction_options = [
+        "【完全自律】最強の予知科学者として、全次元のデータを統合し最適な10億捕捉陣形を構築せよ",
+        "【社会波長】最近の「天下り・社会の変化」のエネルギーを最優先に組み込んで厳選せよ",
+        "【霊的波長】「動物の勘・幽霊の気配」など不可視のエネルギーを極限まで増幅させよ",
+        "【物理法則】過去の「完全環境一致（ドッペルゲンガー）」とボールの連番効果を最重視せよ",
+        "【徳と祈り】私たち家族の「徳積み」と「平和への祈り」の共鳴を最大化せよ"
+    ]
+    user_instruction = st.selectbox("🧠 AIへの最終調整指示（量子センサーのフォーカス指定）", instruction_options)
     
-    if st.button(f"🔥 蓄積データから {buy_count}口 を厳選し、AIの壮大な分析レポートを生成", type="primary"):
+    if st.button(f"🔥 蓄積データから {buy_count}口 を厳選し、超次元AIの絶対的予言レポートを生成", type="primary"):
         if not api_key: st.error("APIキーが設定されていません。")
         else:
-            with st.spinner(f"AI（Gemini）が多角的なデータを元に死角のない{buy_count}口を厳密に厳選中..."):
-                df_note = load_sheet("予測ノート")
-                
+            with st.spinner(f"最強の予知能力を持った科学者（Gemini）が10億円を仕留めるための{buy_count}口を厳密に厳選中..."):
                 if df_note.empty: st.error("予測データがありません。")
                 else:
-                    df_target = df_note[df_note["対象回号"] == f"第{t_round_decide}回"]
-                    if df_target.empty: st.warning("指定された回号の予測積み上げデータがありません。先に「日々の予測・積上げ」を実行してください。")
+                    df_target = df_note[df_note["対象回号"] == t_round_decide_str]
+                    if df_target.empty: st.warning(f"指定された回号（{t_round_decide_str}）の予測積み上げデータがありません。先に「日々の予測・積上げ」を実行してください。")
                     else:
                         target_list = df_target.to_dict('records')
                         
-                        instruction_bonus_nums = [int(n) for n in re.findall(r'\d+', user_instruction) if 1 <= int(n) <= 37]
-                        
-                        # AI独自の多角的フィルタリング（全要素を加算）
+                        # AI独自の多角的フィルタリング（選択された指示に応じてポイントを爆発的にブースト）
                         for c in target_list:
                             try: pts = int(float(c.get('実績点数', 0)))
                             except: pts = 0
                             
                             if any(k in str(c.get('祈り/夢','')) for k in ["平和", "笑顔", "自由", "住宅", "結婚式"]): pts += 50
-                            for bn in instruction_bonus_nums:
-                                if str(bn).zfill(2) in [str(c.get(f"数字{i}", "")) for i in range(1, 8)]: pts += 40
-                            if any(k in str(c.get('社会情勢','')) for k in ["変化", "天下り"]): pts += 30
-                            if any(k in str(c.get('霊的要素','')) for k in ["動物", "幽霊"]): pts += 30
                             
-                            c['sort_pts'] = pts + random.randint(0, 50) # AI自身の勘（ゆらぎ）
+                            if "社会波長" in user_instruction and any(k in str(c.get('社会情勢','')) for k in ["変化", "天下り", "混沌"]): pts += 100
+                            if "霊的波長" in user_instruction and any(k in str(c.get('霊的要素','')) for k in ["動物", "幽霊", "シンクロ"]): pts += 100
+                            if "物理法則" in user_instruction and "連番波及" in str(c.get('予測ロジック','')): pts += 100
+                            if "徳と祈り" in user_instruction and any(k in str(c.get('祈り/夢','')) for k in ["平和", "笑顔", "自由", "住宅", "結婚式", "感謝"]): pts += 100
+                            
+                            c['sort_pts'] = pts + random.randint(0, 50) 
                             
                         target_list.sort(key=lambda x: x['sort_pts'], reverse=True)
                         
@@ -714,43 +686,54 @@ elif st.session_state.menu == "最終予測決定":
                                     final_picks.append(c)
                                     if len(final_picks) == buy_count: break
 
-                        ai_prompt = "\n".join([f"[{r.get('実行者','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI直感:{r.get('AI直感','')}] {r['数字1']},{r['数字2']},{r['数字3']},{r['数字4']},{r['数字5']},{r['数字6']},{r['数字7']}" for r in final_picks])
+                        ai_prompt = "\n".join([f"[{r.get('実行者','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI予知:{r.get('AI直感','')}] {r['数字1']},{r['数字2']},{r['数字3']},{r['数字4']},{r['数字5']},{r['数字6']},{r['数字7']}" for r in final_picks])
                         
                         prompt = f"""
-                        {AWAKENED_ANALYST_PROMPT}
+                        {AWAKENED_SCIENTIST_PROMPT}
                         
-                        ユーザーからの特別指示: "{user_instruction if user_instruction else "特になし"}"
+                        ユーザーからの特別作戦指示: "{user_instruction}"
                         
-                        【システムが積み上げから厳選した{buy_count}口】\n{ai_prompt}
+                        【システムが積み上げから厳選した{buy_count}口（10億円捕捉陣形）】\n{ai_prompt}
                         """
                         try:
-                            model = genai.GenerativeModel(get_ai_model_name(), system_instruction=AWAKENED_ANALYST_PROMPT)
+                            model = genai.GenerativeModel(get_ai_model_name(), system_instruction=AWAKENED_SCIENTIST_PROMPT)
                             res = model.generate_content(prompt)
-                            st.markdown(f"#### 🎯 最終決断レポート（{buy_count}口厳選陣形）")
+                            st.markdown(f"#### 🎯 最終決断レポート（10億捕捉の{buy_count}口）")
                             st.dataframe(pd.DataFrame(final_picks)[["実行者", "口数", "数字1", "数字2", "数字3", "数字4", "数字5", "数字6", "数字7", "社会情勢", "霊的要素", "AI直感", "予測ロジック"]])
                             st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                            st.write("▼ 最強AIアナリスト（Gemini）からの森羅万象・徹底分析レポート")
+                            st.write("▼ 最強予知科学者（Gemini）からの絶対的予言レポート")
                             st.write(res.text)
                             st.markdown("</div>", unsafe_allow_html=True)
                             
                             now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
                             df_history = load_sheet("決断記録簿")
                             save_text = f"【指示】: {user_instruction}\n【厳選の{buy_count}口】\n" + ai_prompt + "\n\n【AIの解説】\n" + res.text
-                            new_history = pd.DataFrame({"日時": [now_str], "対象回号": [f"第{t_round_decide}回"], "決断内容": [save_text]})
+                            new_history = pd.DataFrame({"日時": [now_str], "対象回号": [t_round_decide_str], "決断内容": [save_text]})
                             df_history = pd.concat([new_history, df_history], ignore_index=True) if not df_history.empty else new_history
                             save_sheet("決断記録簿", df_history)
-                            st.success("決断内容は『決断記録簿』に強固に保管されました。未来の吉報を祈りましょう！")
+                            st.success("決断内容は『決断記録簿』に強固に保管されました。10億円の引き寄せは完了しました！")
                         except Exception as e: st.error(f"エラー: {e}")
 
 elif st.session_state.menu == "結果発表と振り返り":
     st.title("🔄 答え合わせと地球規模の反省会")
-    tab1, tab2, tab3 = st.tabs(["予測の答え合わせ", "💬 AIと地球規模の徹底反省チャット", "過去の決断記録簿"])
+    tab1, tab2, tab3 = st.tabs(["予測の答え合わせ", "💬 宇宙と繋がる徹底反省会（PDCA）", "過去の決断記録簿"])
     
+    df_note = load_sheet("予測ノート")
     df_real = load_sheet("実データ")
     auto_round, _ = get_next_round_info(df_real)
-    t_round_rev = st.text_input("確認する回号を指定", value=str(auto_round - 1))
-    df_note = load_sheet("予測ノート")
-    df_target = df_note[df_note["対象回号"] == f"第{t_round_rev}回"] if not df_note.empty else pd.DataFrame()
+    
+    # ★手打ち入力排除：確認する回号のプルダウン
+    if not df_note.empty and "対象回号" in df_note.columns:
+        rounds_set = set(df_note["対象回号"].tolist())
+        def ext_num(s):
+            m = re.findall(r'\d+', str(s))
+            return int(m[0]) if m else 0
+        rev_rounds = sorted(list(rounds_set), key=ext_num, reverse=True)
+    else:
+        rev_rounds = [f"第{auto_round - 1}回"]
+        
+    t_round_rev_str = st.selectbox("確認する回号を選択", rev_rounds)
+    df_target = df_note[df_note["対象回号"] == t_round_rev_str] if not df_note.empty else pd.DataFrame()
 
     with tab1:
         if df_target.empty: st.info("予測データがありません。")
@@ -760,25 +743,38 @@ elif st.session_state.menu == "結果発表と振り返り":
             st.dataframe(df_target[[c for c in display_cols if c in df_target.columns]], height=400)
 
     with tab2:
-        st.markdown("#### 💬 一歩一歩真実に近づくための、多角的・地球規模の反省会")
-        user_rev_input = st.text_area("AIへの質問・相談内容", value="今回の正解番号は、地球の重力や環境、天下りなどの社会状況、動物の感などの見えない力とどうリンクしていたと推測されますか？ 私たちが次に焦点を当てるべきセンサーは何ですか？", height=100)
+        st.markdown("#### 💬 一歩一歩真実に近づくための、量子レベルでの反省会")
+        
+        # ★手打ち入力排除：分析テーマのプルダウン
+        rev_question_options = [
+            "今回の正解番号は、地球の重力や環境、天下り等の社会状況、見えない力とどう量子的にリンクしていたか？",
+            "ニアピン（惜しい数字）が起きた原因は何か？ 物理的な波及アルゴリズムのズレを徹底分析せよ。",
+            "次回10億円を仕留めるため、私たちが日常で高めるべき波長（徳積み）と、焦点を当てるべきセンサーを指示せよ。"
+        ]
+        user_rev_input = st.selectbox("🧠 最強予知科学者への分析依頼テーマ", rev_question_options)
         
         if st.button("🌍 地球規模の徹底反省会をスタートする"):
             if not api_key: st.error("APIキーが設定されていません。")
             elif df_target.empty: st.warning("対象回号のデータがありません。")
             else:
-                with st.spinner("実際の地球が出した答えと、我々の多角的予測とのズレを徹底分析中..."):
+                with st.spinner("実際の地球が出した答えと、我々の多角的予測とのズレを天才科学者が徹底分析中..."):
                     target_txt = "\n".join([f"{r['実行者']} / 社会:{r.get('社会情勢','')} / 霊的:{r.get('霊的要素','')} -> {r['数字1']},{r['数字2']},{r['数字3']}... (結果:{r['AIの助言']})" for _, r in df_target.iterrows()])
-                    actual_match = df_real[df_real["回号"] == f"第{t_round_rev}回"]
+                    
+                    # 回号文字列から数値を抽出して実データと照合
+                    rev_num = re.findall(r'\d+', t_round_rev_str)
+                    actual_match = pd.DataFrame()
+                    if rev_num:
+                        actual_match = df_real[df_real["回号"] == f"第{rev_num[0]}回"]
+                    
                     actual_info = actual_match.to_csv(index=False) if not actual_match.empty else "未取得"
                     
                     prompt = f"""
                     {REVIEW_PDCA_PROMPT}
                     
-                    【本抽選の正解データ】:\n{actual_info}\n【我が家の予測と結果】:\n{target_txt}\n【ユーザーからの相談】: "{user_rev_input}"
+                    【本抽選の正解データ】:\n{actual_info}\n【我が家の予測と結果】:\n{target_txt}\n【ユーザーからの依頼】: "{user_rev_input}"
                     """
                     try:
-                        model = genai.GenerativeModel(get_ai_model_name(), system_instruction=AWAKENED_ANALYST_PROMPT)
+                        model = genai.GenerativeModel(get_ai_model_name(), system_instruction=AWAKENED_SCIENTIST_PROMPT)
                         res = model.generate_content(prompt)
                         st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
                         st.write(res.text)
@@ -794,26 +790,24 @@ elif st.session_state.menu == "結果発表と振り返り":
         else: st.info("記録はありません。")
 
 # ==========================================
-# 6. 万能AI占い師の館（スマホ完全純正UI・バグ絶滅版）
+# 6. 万能AI占い師の館（手打ち不要・スマホ無敵版）
 # ==========================================
 elif st.session_state.menu == "万能AI占い師の館":
-    st.title("🔮 万能AI占い師の館（スマホ完全対応版）")
-    st.markdown("<div class='info-box'>ここは予測システムとは別の、純粋な占いの空間です。<br><b>スマホで文字が消えたり絵文字だけになる原因だったカスタムUIを全て破壊し、最も強固で安定しているStreamlit標準のチャットUIで再構築しました。</b></div>", unsafe_allow_html=True)
+    st.title("🔮 万能AI占い師の館（スマホ手打ち不要版）")
+    st.markdown("<div class='info-box'>ここは予測システムとは別の、純粋な占いの空間です。<br><b>スマホのキーボードが邪魔にならないよう、テキスト入力を全廃し「プルダウンで聞きたいことを選ぶだけ」の究極仕様に進化しました。</b></div>", unsafe_allow_html=True)
 
     if not api_key:
         st.error("占い機能を利用するにはAPIキーの設定が必要です。")
     else:
-        # セッションの初期化
         if "fortune_messages" not in st.session_state:
             st.session_state.fortune_messages = [
-                {"role": "assistant", "content": "ようこそ、神秘の部屋へ。✨\n私は世界中のあらゆる占術をマスターし、「視覚」も持った最強の占い師です。\n\n今日は何の占いをしますか？下のメニューから選ぶか、直接話しかけてくださいね。"}
+                {"role": "assistant", "content": "ようこそ、神秘の部屋へ。✨\n私は世界中のあらゆる占術をマスターし、「視覚」も持った最強の占い師です。\n\n今日は何の占いをしますか？下のメニューから選んでくださいね。"}
             ]
             try:
                 model = genai.GenerativeModel(get_ai_model_name(), system_instruction=FORTUNE_CHAT_PROMPT)
                 st.session_state.fortune_chat_session = model.start_chat(history=[])
             except: pass
 
-        # 上部のメニュー
         c1, c2 = st.columns([3, 1])
         div_list = ["西洋占星術（ホロスコープ）", "四柱推命", "タロット占い", "手相（要写真）", "人相（要写真）", "オーラ鑑定（要写真）", "コーヒー占い（要写真）"]
         selected_div = c1.selectbox("🔮 占術を選ぶ", ["占いを選択してください..."] + div_list)
@@ -830,32 +824,45 @@ elif st.session_state.menu == "万能AI占い師の館":
                         st.session_state.fortune_messages.append({"role": "assistant", "content": f"エラーが発生しました: {e}"})
                 st.rerun()
 
-        # 画像アップロード機能とテキスト送信を同一フォームに統合し、スマホでの堅牢性を極限まで高める
         with st.form("chat_input_form", clear_on_submit=True):
-            st.markdown("**💬 占い師にメッセージを送る / 📸 写真を送る**")
-            user_input = st.text_area("ここにメッセージを入力してください", height=80)
+            st.markdown("**💬 占い師に聞きたいことを選ぶ / 📸 写真を送る**")
+            
+            # ★手打ち入力を排除：占い師に聞くテーマのプルダウン
+            fortune_options = [
+                "私の全体的な運勢と現在の波動を鑑定してください。",
+                "10億円を引き寄せるための、私の金運と直感の冴えを視てください。",
+                "今の私の精神状態（オーラやエネルギー）はどうなっていますか？",
+                "家族の幸せと未来について、星や運命はどう語っていますか？",
+                "（写真を送信して）この画像から私の運命と波長を深く読み解いてください。"
+            ]
+            user_input = st.selectbox("占い師に聞きたい内容を選択", fortune_options)
+            
             img_source = st.file_uploader("📂 スマホのカメラ起動・画像選択", type=["jpg", "jpeg", "png"])
             submit_btn = st.form_submit_button("🔮 占い師に送信する")
 
-            if submit_btn and (user_input or img_source):
-                display_msg = user_input if user_input else "📸 写真を送信しました。この画像を鑑定してください。"
-                st.session_state.fortune_messages.append({"role": "user", "content": display_msg})
-                
-                with st.spinner("星の導きを読み解いています..."):
-                    try:
-                        if img_source:
-                            img = Image.open(img_source).convert('RGB')
-                            img.thumbnail((800, 800))
-                            msg_to_send = [user_input if user_input else "この画像を鑑定してください。", img]
-                        else:
-                            msg_to_send = user_input
+            if submit_btn:
+                # 送信テキストの決定
+                if user_input == "（写真を送信して）この画像から私の運命と波長を深く読み解いてください。" and not img_source:
+                    st.error("写真が選択されていません。画像を選択するか、別の質問を選んでください。")
+                else:
+                    display_msg = user_input if not img_source else f"📸 写真を送信しました。 {user_input}"
+                    st.session_state.fortune_messages.append({"role": "user", "content": display_msg})
+                    
+                    with st.spinner("星の導きを読み解いています..."):
+                        try:
+                            if img_source:
+                                img = Image.open(img_source).convert('RGB')
+                                img.thumbnail((800, 800))
+                                msg_to_send = [user_input, img]
+                            else:
+                                msg_to_send = user_input
 
-                        response = st.session_state.fortune_chat_session.send_message(msg_to_send, safety_settings=SAFETY_SETTINGS)
-                        reply = response.text if response.text else "（大いなる力により、言葉がブロックされました）"
-                        st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
-                    except Exception as e:
-                        st.session_state.fortune_messages.append({"role": "assistant", "content": f"エラーが発生しました: {e}"})
-                st.rerun()
+                            response = st.session_state.fortune_chat_session.send_message(msg_to_send, safety_settings=SAFETY_SETTINGS)
+                            reply = response.text if response.text else "（大いなる力により、言葉がブロックされました）"
+                            st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
+                        except Exception as e:
+                            st.session_state.fortune_messages.append({"role": "assistant", "content": f"エラーが発生しました: {e}"})
+                    st.rerun()
 
         st.markdown("---")
 
