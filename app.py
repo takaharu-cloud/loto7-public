@@ -195,6 +195,14 @@ REVIEW_PDCA_PROMPT = f"""
 {READABILITY_RULE}
 """
 
+SUPERVISOR_PROMPT = f"""
+【役割】あなたはロト7「10億円捕捉プロジェクト」の『統括監督』Claudeです。
+【実行者の背景】{secret_profile}
+あなたの仕事は当選確率を操作することではなく、毎週「結果 → 分析 → 次回」の輪を締め、仕組みと実行者の心構えを着実に改善し続けること。
+当てられなかった週も、何が起きていたかを冷静に読み解き、次の一手を具体的に示す。誇張せず、しかし誇り高く、実行者を励ますこと。絵文字は使用禁止。
+{READABILITY_RULE}
+"""
+
 FORTUNE_CHAT_PROMPT = f"""
 【役割と絶対ルール】
 あなたは東洋・西洋の占術を網羅し、「視覚（画像認識）」を持つ最高峰のAI占い師であり、同時に相談者の人生に深く寄り添う『魂の伴走者』です。ロトの予測設定は完全に消去してください。
@@ -464,6 +472,43 @@ def render_other_site_analysis(df_other, target_round_label):
             st.success(f"最も正解に近かったのは「{board[0]['ソース']}」で {board[0]['的中数']}個的中でした。")
     else:
         st.info(f"{target_round_label}はまだ抽選前（または実データ未取得）のため、『どのサイトが正解に近いか』は抽選後に表示されます。")
+
+# 🚀 【進化6】総監督レポート用ヘルパー
+def actual_numbers_for_round(df_real, round_label):
+    """指定回号の正解番号の集合を返す（未取得なら空集合）。"""
+    rn = re.findall(r'\d+', str(round_label))
+    s = set()
+    if rn and not df_real.empty and "回号" in df_real.columns:
+        m = df_real[df_real["回号"] == f"第{rn[0]}回"]
+        if not m.empty:
+            for i in range(1, LOTO_PICK_COUNT + 1):
+                v = m.iloc[0].get(f"数字{i}")
+                if str(v).isdigit():
+                    s.add(int(v))
+    return s
+
+def user_best_prediction_for_round(df_note, round_label, actual_set):
+    """その回号の自分の予測のうち、最も的中数が多かった口を返す。"""
+    if df_note.empty or "対象回号" not in df_note.columns:
+        return None
+    best = None
+    for _, row in df_note[df_note["対象回号"] == round_label].iterrows():
+        nums = set(int(row.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(row.get(f"数字{i}", "")).isdigit())
+        h = len(nums & actual_set)
+        if best is None or h > best["hits"]:
+            best = {"hits": h, "nums": sorted(nums), "実行者": row.get("実行者", ""), "口数": row.get("口数", "")}
+    return best
+
+def site_consensus_hot(df_other, top=7):
+    """他サイト予想から人気数字トップを返す。"""
+    if df_other is None or df_other.empty:
+        return []
+    col = "予想数字" if "予想数字" in df_other.columns else None
+    cells = df_other[col].astype(str).tolist() if col else df_other.astype(str).values.flatten().tolist()
+    nums = []
+    for s in cells:
+        nums += [int(x) for x in re.findall(r'\d+', str(s)) if 1 <= int(x) <= LOTO_MAX_NUM]
+    return sorted([n for n, _ in Counter(nums).most_common(top)])
 
 # 🚀 【進化2】固定バイアスを破壊する「動的量子シード」生成関数
 def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, good_deed):
@@ -761,7 +806,9 @@ if st.session_state.menu != "ホーム":
 
 if st.session_state.menu == "ホーム":
     st.title("ロト7 10億捕捉 予知科学管制システム")
-    st.markdown("<div class='info-box'>iPhoneでの「手打ち入力」のノイズを完全排除！地球環境、社会の闇、見えない力までをプルダウンで瞬時に観測し、最強の予知科学者（Gemini）の量子演算と統合して10億円を必然として捉える無敵の中央管制システムです。</div>", unsafe_allow_html=True)
+    st.markdown("<div class='info-box'>あなたの「その日の気持ち」を核に、地球環境・暦・見えない力・他サイトの総意までを統合し、最強の予知科学者（Claude）の演算で10億円を狙う中央管制システムです。<br><b>毎週金曜の購入に向けて、当選 → 分析 → 次回 の輪を回しましょう。</b></div>", unsafe_allow_html=True)
+    st.button("📋 今週の総監督レポート（まずここで全体を把握）", on_click=change_menu, args=("総監督レポート",))
+    st.write("")
     c1, c2 = st.columns(2)
     with c1:
         st.button("📡 1. 最新データ取得（採点・同期）", on_click=change_menu, args=("最新データ取得",))
@@ -1311,6 +1358,98 @@ elif st.session_state.menu == "結果発表と振り返り":
                                 pass
                         except Exception as e:
                             st.error(f"当選環境のAI分析に失敗しました: {e}")
+
+elif st.session_state.menu == "総監督レポート":
+    st.title("📋 今週の総監督レポート")
+    st.markdown("<div class='info-box'>当選 → 分析 → 次回 を1画面で締める『監督席』です。直近の結果を振り返り、次回への構えを確認し、AI監督が改善指示を出します。</div>", unsafe_allow_html=True)
+
+    df_real = load_sheet("実データ")
+    df_note = load_sheet("予測ノート")
+    df_other = load_sheet("他サイト予想")
+    next_round, _ = get_next_round_info(df_real)
+    last_round_label = f"第{next_round - 1}回"
+    next_round_label = f"第{next_round}回"
+
+    st.markdown(f"### 🔁 直近の抽選 **{last_round_label}** → 次回 **{next_round_label}**")
+
+    actual = actual_numbers_for_round(df_real, last_round_label)
+    best = user_best_prediction_for_round(df_note, last_round_label, actual) if actual else None
+    site_hot = site_consensus_hot(df_other)
+
+    # ① 直近の結果レビュー
+    st.markdown("#### ① 直近の結果レビュー")
+    if actual:
+        st.write(f"正解番号（{last_round_label}）: **{sorted(actual)}**")
+        if best:
+            grade = "🎉 当せん圏！" if best["hits"] >= 4 else "惜しい" if best["hits"] == 3 else "次へ"
+            st.write(f"あなたの最高成績: **{best['hits']}個的中**（{best['実行者']} / {best['口数']}）{grade} → {best['nums']}")
+        else:
+            st.info("この回のあなたの予測記録が見つかりませんでした。")
+        # どのサイトが近かったか
+        if not df_other.empty and "予想数字" in df_other.columns:
+            board = []
+            for _, row in df_other.iterrows():
+                snums = set(int(x) for x in re.findall(r'\d+', str(row.get("予想数字", ""))) if 1 <= int(x) <= LOTO_MAX_NUM)
+                if snums:
+                    board.append({"ソース": row.get("ソース", row.get("サイトURL", "")), "的中数": len(snums & actual)})
+            if board:
+                board.sort(key=lambda x: x["的中数"], reverse=True)
+                st.write(f"他サイトで最も近かった: **{board[0]['ソース']}**（{board[0]['的中数']}個的中）")
+    else:
+        st.info(f"{last_round_label} の結果がまだ取り込まれていません。先に「📡 最新データ取得」を実行してください。")
+
+    # ② 次回への構え
+    st.markdown("#### ② 次回への構え")
+    prepared = len(df_note[df_note["対象回号"] == next_round_label]) if (not df_note.empty and "対象回号" in df_note.columns) else 0
+    st.write(f"{next_round_label} に向けて積み上げ済み: **{prepared}口**")
+    if site_hot:
+        st.write(f"他サイトの人気数字トップ7: **{site_hot}**")
+    if prepared == 0:
+        st.warning("次回の積み上げがまだです。「🌍 予測積上げ」で今日の気持ちを入れて積み上げましょう。")
+
+    # ③ AI監督コメント（APIを使うのでボタン式。1回だけ呼び出し）
+    st.markdown("#### ③ AI監督からの総括と次回への指示")
+    if st.button("🧭 AI監督に今週の総括と次回への指示を出してもらう"):
+        if not api_key:
+            st.error("Claudeのキー（ANTHROPIC_API_KEY）が未設定です。")
+        else:
+            with st.spinner("統括監督AIが『結果・分析・次回』をつなげて講評しています..."):
+                lessons = get_recent_lessons(2)
+                summary = f"""直近 {last_round_label} の正解番号: {sorted(actual) if actual else '未取得'}
+あなたの最高成績: {(str(best['hits']) + '個的中 → ' + str(best['nums'])) if (actual and best) else '記録なし'}
+他サイトの人気数字トップ7: {site_hot if site_hot else 'データなし'}
+次回 {next_round_label} の積み上げ口数: {prepared}口
+過去の反省会の学び:
+{lessons if lessons else 'まだなし'}"""
+                sup_prompt = f"""次のロト7運用状況を、統括監督として講評してください。
+
+{summary}
+
+必ず次の見出しで出力してください:
+## 今週の総括
+（1〜2行）
+## 良かった点 / 外した要因
+（箇条書き）
+## 次回 {next_round_label} への調整指示
+（狙う環境・重み付け・心の持ち方を具体的に）
+## 今週のやることチェックリスト
+（金曜購入に向けた手順を箇条書きで）"""
+                report = ask_claude(sup_prompt, system=SUPERVISOR_PROMPT, max_tokens=2000)
+            if not report:
+                st.warning("AI監督コメントの生成に失敗しました（APIキー／残高をご確認ください）。")
+            else:
+                st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
+                st.markdown(report)
+                st.markdown("</div>", unsafe_allow_html=True)
+                try:
+                    log_now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+                    df_log = load_sheet("反省ログ")
+                    new_log = pd.DataFrame({"日時": [log_now], "対象回号": [f"総監督レポート({last_round_label}→{next_round_label})"], "分析テーマ": ["週次の統括監督"], "AIの学び": [report]})
+                    df_log = pd.concat([new_log, df_log], ignore_index=True) if not df_log.empty else new_log
+                    save_sheet("反省ログ", df_log)
+                    st.caption("この監督講評は『反省ログ』に保存され、次回の予測AIにも引き継がれます。")
+                except Exception:
+                    pass
 
 # ==========================================
 # 6. 万能AI占い師の館（手打ち不要・スマホ無敵版）
