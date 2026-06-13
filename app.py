@@ -1103,19 +1103,36 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         elites.append({"nums": p, "pts": base_pts + ai_yuragi, "base_pts": base_pts})
                     
                     elites.sort(key=lambda x: x["pts"], reverse=True)
-                    top30, num_usage = [], Counter()
+                    top30, num_usage, added = [], Counter(), set()
+                    TARGET_ELITE = 28
 
-                    for e in elites:
-                        if any(len(set(e["nums"]) & set(t["nums"])) >= 4 for t in top30): continue
-                        if any(num_usage[n] >= 7 for n in e["nums"]): continue
-                        e["type"] = logic_name
-                        top30.append(e)
+                    def add_pick(e, max_overlap, usage_cap):
+                        key = tuple(e["nums"])
+                        if key in added: return False
+                        if any(len(set(e["nums"]) & set(t["nums"])) >= max_overlap for t in top30): return False
+                        if usage_cap is not None and any(num_usage[n] >= usage_cap for n in e["nums"]): return False
+                        item = dict(e); item["type"] = logic_name
+                        top30.append(item); added.add(key)
                         for n in e["nums"]: num_usage[n] += 1
-                        if len(top30) == 28: break
-                        
+                        return True
+
+                    # 段階的に制約をゆるめて、目標の28口を確実に確保する（重複/使用回数の上限を順に緩和）
+                    for max_ov, cap in [(4, 7), (4, 10), (4, None), (5, None), (7, None)]:
+                        for e in elites:
+                            if len(top30) >= TARGET_ELITE: break
+                            add_pick(e, max_ov, cap)
+                        if len(top30) >= TARGET_ELITE: break
+
+                    # それでも足りない場合はランダムで補完（重複は除く）
+                    while len(top30) < TARGET_ELITE:
+                        rp = sorted(random.sample(nums_list, LOTO_PICK_COUNT))
+                        if tuple(rp) in added: continue
+                        top30.append({"nums": rp, "pts": 0, "base_pts": 0, "type": logic_name + "(補完)"})
+                        added.add(tuple(rp))
+
+                    # 未知への挑戦：完全ランダム2口（合計30口）
                     for _ in range(2):
-                        rp = random.sample(range(1, LOTO_MAX_NUM + 1), LOTO_PICK_COUNT)
-                        rp.sort()
+                        rp = sorted(random.sample(nums_list, LOTO_PICK_COUNT))
                         top30.append({"nums": rp, "pts": 0, "base_pts": 0, "type": "完全ランダム(未知への挑戦)"})
                     
                     new_data = []
@@ -1137,7 +1154,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         df_note = df_note[~mask]
                     df_note = pd.concat([df_note, pd.DataFrame(new_data)], ignore_index=True) if not df_note.empty else pd.DataFrame(new_data)
                     save_sheet("予測ノート", df_note)
-                    st.success(f"固定バイアスを完全排除し、動的量子シードと物理演算を駆使して、{target_round_str}に向けて最強の30口を積み上げました。（担当: {operator}）")
+                    st.success(f"固定バイアスを完全排除し、動的量子シードと物理演算を駆使して、{target_round_str}に向けて最強の{len(top30)}口を積み上げました。（担当: {operator}）")
 
 elif st.session_state.menu == "最終予測決定":
     st.title("🎯 最終決断！10億捕捉の超次元包囲網編成")
