@@ -510,6 +510,26 @@ def site_consensus_hot(df_other, top=7):
         nums += [int(x) for x in re.findall(r'\d+', str(s)) if 1 <= int(x) <= LOTO_MAX_NUM]
     return sorted([n for n, _ in Counter(nums).most_common(top)])
 
+# 🚀 【進化7】占い × ロト7 の橋渡し（偏り対策：別管理＋日付ごと＋控えめ反映）
+def save_fortune_lucky(nums):
+    """占いが出した今日のラッキーナンバーをシート『占いラッキー』に保存（同じ日付は上書き）。"""
+    today = datetime.now(JST).strftime("%Y-%m-%d")
+    df = load_sheet("占いラッキー")
+    rows = df[df["日付"].astype(str) != today].to_dict("records") if (not df.empty and "日付" in df.columns) else []
+    rows.insert(0, {"日付": today, "数字": ", ".join(str(n) for n in nums)})
+    save_sheet("占いラッキー", pd.DataFrame(rows, columns=["日付", "数字"]))
+
+def get_today_fortune_numbers():
+    """今日の占いラッキーナンバー（1〜37）を返す。無ければ空。"""
+    today = datetime.now(JST).strftime("%Y-%m-%d")
+    df = load_sheet("占いラッキー")
+    if df.empty or "日付" not in df.columns:
+        return []
+    sub = df[df["日付"].astype(str) == today]
+    if sub.empty:
+        return []
+    return sorted({int(x) for x in re.findall(r'\d+', str(sub.iloc[0].get("数字", ""))) if 1 <= int(x) <= LOTO_MAX_NUM})
+
 # 🚀 【進化2】固定バイアスを破壊する「動的量子シード」生成関数
 def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, good_deed):
     """
@@ -914,6 +934,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
             height=150
         )
 
+        use_fortune = st.checkbox("🔮 今日の占いのラッキーナンバーを軽く加味する（偏り防止のため控えめウェイト・任意）", value=False, help="『万能AI占い師の館』で『🎯今日の占いナンバーをロト7へ渡す』を押して保存した数字を、控えめに加点します。")
+
         submitted = st.form_submit_button("🔥 超次元演算：あなたの気持ちを核に量子シードと物理法則を起動し予測を積上げる")
         
         if submitted:
@@ -927,6 +949,9 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     soc_sensor = spirit_sensor = good_deed = feeling_text if feeling_text else "特になし"
                     prayer = feeling_text if feeling_text else "（無心）"
                     biorhythm = sign = feeling_text
+
+                    # 占い × ロト7（任意・控えめ）：今日の占いナンバーを取得
+                    fortune_nums = get_today_fortune_numbers() if use_fortune else []
 
                     weather, pressure = get_current_weather_and_pressure()
                     m_phase, m_tide, m_gravity = get_moon_and_tide(draw_date.year, draw_date.month, draw_date.day)
@@ -956,6 +981,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     st.write(f"予定日（{draw_date}）の引力状態：**【{m_tide} / {m_phase} / 重力:{m_gravity} / {weather}】**")
                     st.write(f"🌌 **【動的量子シード】**: {quantum_seed_nums} （今日の宇宙波長から生成された特異数）")
                     if ai_intuition_nums: st.write(f"🧠 **【予知科学者の直感ナンバー】**: {ai_intuition_nums}")
+                    if fortune_nums: st.write(f"🔮 **【占いラッキーナンバー（控えめ反映）】**: {fortune_nums}")
+                    elif use_fortune: st.caption("🔮 占いを加味する設定ですが、今日の占いナンバーが未保存です。占い師の館で『🎯ロト7へ渡す』を押してください。")
                     if sync_matches:
                         st.write("🌍 **【過去の完全環境一致日】**:")
                         for m in sync_matches[:2]: st.write(f" - {m['回号']} ({m['日付']}) | 一致: {m['一致項目']}")
@@ -995,6 +1022,9 @@ elif st.session_state.menu == "日々の予想・積上げ":
 
                         # 理論6：多角・環境共鳴（過去の同一環境で実際に出た数字を、月だけに偏らず加点）
                         base_w += int(env_resonance.get(n, 0) * 0.5)
+
+                        # 理論7：占いのラッキーナンバー（任意・控えめ。他シグナルより弱く＝偏りにくい）
+                        if n in fortune_nums: base_w += 15
 
                         base_weights.append(max(1, base_w))
 
@@ -1488,81 +1518,87 @@ elif st.session_state.menu == "万能AI占い師の館":
             st.session_state.fortune_api_messages.append({"role": "assistant", "content": reply})
             return reply
 
-        c1, c2 = st.columns([3, 1])
-        div_list = ["🕊 人生の目的・魂の使命の鑑定", "西洋占星術（ホロスコープ）", "四柱推命", "タロット占い", "手相（要写真）", "人相（要写真）", "オーラ鑑定（要写真）", "コーヒー占い（要写真）"]
-        selected_div = c1.selectbox("🔮 占術を選ぶ", ["占いを選択してください..."] + div_list)
-        if c2.button("この占いを始める", use_container_width=True):
-            if selected_div != "占いを選択してください...":
-                user_msg = f"「{selected_div}」をお願いします。"
-                st.session_state.fortune_messages.append({"role": "user", "content": user_msg})
-                with st.spinner("星の声を聴いています..."):
-                    reply = send_to_fortune(user_msg)
-                    st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
-                st.rerun()
-
         DEFAULT_IMG_QUESTION = "この画像から私の運命と波長を深く読み解いてください。"
 
-        with st.form("chat_input_form", clear_on_submit=True):
-            st.markdown("**💬 占い師と自由に会話する / 🗂 定番から選ぶ / 📸 写真を送る**")
+        # --- 補助メニュー（たまにしか使わないので折りたたみ。写真は最初に置く）---
+        with st.expander("🗂 占術を選ぶ ／ 📸 写真を送る ／ 定番の質問から選ぶ", expanded=False):
+            img_source = st.file_uploader("📂 写真を選ぶ（手相・人相・オーラ等）。選ぶと次のメッセージに添付されます。", type=["jpg", "jpeg", "png"], key="fortune_img")
 
-            # ✅ チャット化：自由に話しかけられるテキスト入力（最優先）
-            typed_input = st.text_area(
-                "占い師に話しかける（自由入力）",
-                placeholder="例：最近、仕事のことで気持ちが落ち着きません。これからの運勢と、心を整えるヒントを視ていただけますか？",
-                height=90
-            )
+            c1, c2 = st.columns([3, 1])
+            div_list = ["🕊 人生の目的・魂の使命の鑑定", "西洋占星術（ホロスコープ）", "四柱推命", "タロット占い", "手相（要写真）", "人相（要写真）", "オーラ鑑定（要写真）", "コーヒー占い（要写真）"]
+            selected_div = c1.selectbox("🔮 占術を選ぶ", ["占いを選択してください..."] + div_list, key="fortune_div")
+            if c2.button("この占いを始める", use_container_width=True):
+                if selected_div != "占いを選択してください...":
+                    user_msg = f"「{selected_div}」をお願いします。"
+                    st.session_state.fortune_messages.append({"role": "user", "content": user_msg})
+                    with st.spinner("星の声を聴いています..."):
+                        reply = send_to_fortune(user_msg)
+                        st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
+                    st.rerun()
 
-            # 手打ちが面倒なとき用に、定番の質問プルダウンも残す（自由入力が空のときだけ使われる）
             fortune_options = [
-                "（自由入力を使う）",
+                "（選んでこのボタンで送信）",
                 "私はなぜこの世に生まれてきたのか、魂の目的と使命を視てください。",
                 "私の人生の目的と、これから進むべき道を教えてください。",
                 "家族の本当の幸せのために、私が今できることは何でしょうか？",
                 "私の全体的な運勢と現在の波動を鑑定してください。",
                 "私の金運と直感の冴えを視てください。",
                 "今の私の精神状態（オーラやエネルギー）はどうなっていますか？",
-                DEFAULT_IMG_QUESTION
+                DEFAULT_IMG_QUESTION,
             ]
-            quick_pick = st.selectbox("または、定番の質問から選ぶ", fortune_options)
-
-            img_source = st.file_uploader("📂 スマホのカメラ起動・画像選択", type=["jpg", "jpeg", "png"])
-            submit_btn = st.form_submit_button("🔮 占い師に送信する")
-
-            if submit_btn:
-                # 送信テキストの決定：自由入力 > 定番プルダウン > （画像のみの場合の既定文）
-                if typed_input and typed_input.strip():
-                    user_input = typed_input.strip()
-                elif quick_pick != "（自由入力を使う）":
-                    user_input = quick_pick
-                elif img_source:
-                    user_input = DEFAULT_IMG_QUESTION
-                else:
-                    user_input = None
-
-                if user_input is None:
-                    st.error("メッセージを入力するか、定番の質問を選ぶか、写真を送ってください。")
-                else:
-                    display_msg = user_input if not img_source else f"📸 写真を送信しました。 {user_input}"
-                    st.session_state.fortune_messages.append({"role": "user", "content": display_msg})
-
+            quick_pick = st.selectbox("定番の質問から選ぶ", fortune_options, key="fortune_quick")
+            if st.button("この質問を送る", use_container_width=True):
+                if quick_pick != "（選んでこのボタンで送信）":
+                    img = None
+                    if img_source:
+                        img = Image.open(img_source).convert('RGB'); img.thumbnail((800, 800))
+                    disp = quick_pick if not img else f"📸 写真を送信しました。 {quick_pick}"
+                    st.session_state.fortune_messages.append({"role": "user", "content": disp})
                     with st.spinner("星の導きを読み解いています..."):
-                        img = None
-                        if img_source:
-                            img = Image.open(img_source).convert('RGB')
-                            img.thumbnail((800, 800))
-                        reply = send_to_fortune(user_input, image=img)
+                        reply = send_to_fortune(quick_pick, image=img)
                         st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
                     st.rerun()
 
+        # --- 操作ボタン（リセット ／ ロト7への橋渡し）---
+        b1, b2 = st.columns(2)
+        if b1.button("🔄 会話をリセット", use_container_width=True):
+            for k in ["fortune_messages", "fortune_api_messages"]:
+                if k in st.session_state: del st.session_state[k]
+            st.rerun()
+        if b2.button("🎯 今日の占いナンバーをロト7へ渡す", use_container_width=True):
+            with st.spinner("占い師が今日のラッキーナンバーを視ています..."):
+                ln_text = ask_claude(
+                    f"相談者の今日のロト7のラッキーナンバーを、1〜{LOTO_MAX_NUM}の範囲から3つだけ選んでください。説明・絵文字は不要、「7, 15, 32」のようにカンマ区切りの数字だけを出力。",
+                    system=FORTUNE_CHAT_PROMPT, max_tokens=40, model=MODEL_LIGHT,
+                )
+            lucky = sorted({int(x) for x in re.findall(r'\d+', ln_text or "") if 1 <= int(x) <= LOTO_MAX_NUM})[:3]
+            if lucky:
+                save_fortune_lucky(lucky)
+                st.success(f"今日の占いナンバー {lucky} を保存しました。『🌍 予測積上げ』画面で「占いを軽く加味する」にチェックすると反映されます（偏り防止のため控えめウェイト）。")
+            else:
+                st.warning("ナンバーを読み取れませんでした。もう一度お試しください。")
+
         st.markdown("---")
 
-        # スマホで絶対にバグらないStreamlit標準のチャットUI描画
+        # --- チャット履歴 ---
         for msg in st.session_state.fortune_messages:
             avatar = "🔮" if msg["role"] == "assistant" else "👤"
             with st.chat_message(msg["role"], avatar=avatar):
                 st.markdown(msg["content"])
 
-        if st.button("🔄 占い師との会話を最初からやり直す（リセット）", use_container_width=True):
-            if "fortune_messages" in st.session_state: del st.session_state.fortune_messages
-            if "fortune_api_messages" in st.session_state: del st.session_state.fortune_api_messages
-            st.rerun()
+        # --- 画面下に固定される入力欄（スクロール不要）---
+        prompt_text = st.chat_input("占い師に話しかける…（写真は上の「🗂」メニューから添付できます）")
+        if prompt_text is not None:
+            text = prompt_text.strip()
+            img = None
+            if img_source:
+                img = Image.open(img_source).convert('RGB'); img.thumbnail((800, 800))
+            if not text and img:
+                text = DEFAULT_IMG_QUESTION
+            if text:
+                disp = text if not img else f"📸 写真を送信しました。 {text}"
+                st.session_state.fortune_messages.append({"role": "user", "content": disp})
+                with st.spinner("星の導きを読み解いています..."):
+                    reply = send_to_fortune(text, image=img)
+                    st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
+                st.rerun()
