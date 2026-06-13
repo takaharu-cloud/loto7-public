@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Streamlit secrets（APIキー等。絶対にコミットしない）
+.streamlit/secrets.toml
+.streamlit/secrets.toml.*
+.env
+.env.*
+
+# ログ・一時ファイル
+*.log
