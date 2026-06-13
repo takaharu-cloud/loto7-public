@@ -519,6 +519,20 @@ def save_fortune_lucky(nums):
     rows.insert(0, {"日付": today, "数字": ", ".join(str(n) for n in nums)})
     save_sheet("占いラッキー", pd.DataFrame(rows, columns=["日付", "数字"]))
 
+def extract_lucky_from_text(text):
+    """占いの鑑定文から『ラッキーナンバー』を抽出（最大7個・1〜37・重複除去）。
+    『ラッキーナンバー』という語があればそれ以降を優先的に見て、日付や年号のノイズを避ける。"""
+    if not text:
+        return []
+    idx = str(text).rfind("ラッキーナンバー")
+    target = str(text)[idx:] if idx != -1 else str(text)
+    seen = []
+    for x in re.findall(r'\d+', target):
+        v = int(x)
+        if 1 <= v <= LOTO_MAX_NUM and v not in seen:
+            seen.append(v)
+    return seen[:7]
+
 def get_today_fortune_numbers():
     """今日の占いラッキーナンバー（1〜37）を返す。無ければ空。"""
     today = datetime.now(JST).strftime("%Y-%m-%d")
@@ -1566,17 +1580,31 @@ elif st.session_state.menu == "万能AI占い師の館":
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
         if b2.button("🎯 今日の占いナンバーをロト7へ渡す", use_container_width=True):
-            with st.spinner("占い師が今日のラッキーナンバーを視ています..."):
-                ln_text = ask_claude(
-                    f"相談者の今日のロト7のラッキーナンバーを、1〜{LOTO_MAX_NUM}の範囲から3つだけ選んでください。説明・絵文字は不要、「7, 15, 32」のようにカンマ区切りの数字だけを出力。",
-                    system=FORTUNE_CHAT_PROMPT, max_tokens=40, model=MODEL_LIGHT,
-                )
-            lucky = sorted({int(x) for x in re.findall(r'\d+', ln_text or "") if 1 <= int(x) <= LOTO_MAX_NUM})[:3]
+            # まず、いま占い師がチャットで出している鑑定文からラッキーナンバーを拾う
+            last_ai = ""
+            for m in reversed(st.session_state.fortune_messages):
+                if m["role"] == "assistant":
+                    last_ai = m["content"]
+                    break
+            lucky = extract_lucky_from_text(last_ai)
+
+            # 鑑定文に数字が無い場合だけ、会話の文脈から数字だけを抽出（抽出専用ペルソナで確実に）
+            if not lucky:
+                with st.spinner("占いの結果からラッキーナンバーを読み取っています..."):
+                    temp_msgs = st.session_state.fortune_api_messages + [
+                        {"role": "user", "content": f"これまでの鑑定で出たロト7のラッキーナンバーを、1〜{LOTO_MAX_NUM}の数字だけカンマ区切りで出力してください。日付・年号・順位などの数字は含めないこと。説明は不要です。"}
+                    ]
+                    try:
+                        ln = claude_chat(temp_msgs, system="あなたは占い結果から数字だけを抜き出す抽出器です。1〜37の数字をカンマ区切りで出力し、それ以外は何も書かないこと。", max_tokens=60, model=MODEL_LIGHT) or ""
+                    except Exception:
+                        ln = ""
+                    lucky = extract_lucky_from_text(ln)
+
             if lucky:
                 save_fortune_lucky(lucky)
                 st.success(f"今日の占いナンバー {lucky} を保存しました。『🌍 予測積上げ』画面で「占いを軽く加味する」にチェックすると反映されます（偏り防止のため控えめウェイト）。")
             else:
-                st.warning("ナンバーを読み取れませんでした。もう一度お試しください。")
+                st.warning("占い結果にラッキーナンバーが見つかりませんでした。まず占い師に占ってもらい、数字が出てから押してください。")
 
         st.markdown("---")
 
