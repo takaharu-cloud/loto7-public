@@ -116,7 +116,11 @@ def save_sheet(sheet_name, df):
 # 3. 究極のAIプロンプト設定（最強の予知科学者・Claude / Anthropic）
 # ==========================================
 api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = st.secrets.get("ANTHROPIC_MODEL", "claude-opus-4-8")
+# 💰 コスト最適化：通常はSonnet（高品質・中コスト）、抽出など軽い処理はHaiku（最安）。
+# 最高品質にしたい場合は Secrets で ANTHROPIC_MODEL = "claude-opus-4-8" に変更可能。
+MODEL_MAIN = st.secrets.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+MODEL_LIGHT = st.secrets.get("ANTHROPIC_MODEL_LIGHT", "claude-haiku-4-5")
+ANTHROPIC_MODEL = MODEL_MAIN  # 後方互換
 
 @st.cache_resource
 def get_claude_client():
@@ -136,7 +140,7 @@ READABILITY_RULE = """
 - だらだらと長い段落は禁止。スマホでスッと読めるリズムにすること。
 """
 
-def ask_claude(prompt, system=None, max_tokens=4000, image=None):
+def ask_claude(prompt, system=None, max_tokens=2000, image=None, model=None):
     """Claudeに単発で問い合わせる共通関数。imageはPIL Image（任意）。失敗時はNoneを返す。"""
     client = get_claude_client()
     if client is None:
@@ -149,7 +153,7 @@ def ask_claude(prompt, system=None, max_tokens=4000, image=None):
             b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
             content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}})
         content.append({"type": "text", "text": prompt})
-        kwargs = {"model": ANTHROPIC_MODEL, "max_tokens": max_tokens, "messages": [{"role": "user", "content": content}]}
+        kwargs = {"model": model or MODEL_MAIN, "max_tokens": max_tokens, "messages": [{"role": "user", "content": content}]}
         if system:
             kwargs["system"] = system
         res = client.messages.create(**kwargs)
@@ -158,12 +162,12 @@ def ask_claude(prompt, system=None, max_tokens=4000, image=None):
         st.warning(f"Claudeへの問い合わせに失敗しました: {e}")
         return None
 
-def claude_chat(messages, system=None, max_tokens=4000):
+def claude_chat(messages, system=None, max_tokens=1500, model=None):
     """会話履歴（messagesリスト）を渡して応答テキストを得る。占い師チャット用。"""
     client = get_claude_client()
     if client is None:
         return None
-    kwargs = {"model": ANTHROPIC_MODEL, "max_tokens": max_tokens, "messages": messages}
+    kwargs = {"model": model or MODEL_MAIN, "max_tokens": max_tokens, "messages": messages}
     if system:
         kwargs["system"] = system
     res = client.messages.create(**kwargs)
@@ -288,7 +292,7 @@ def collect_other_site_predictions():
 
 本文:
 {page_text}"""
-        text = ask_claude(prompt, max_tokens=200) or ""
+        text = ask_claude(prompt, max_tokens=150, model=MODEL_LIGHT) or ""
         found = sorted({int(n) for n in re.findall(r'\d+', text) if 1 <= int(n) <= LOTO_MAX_NUM})
         results.append({
             "サイトURL": url,
@@ -318,10 +322,11 @@ def research_predictions_via_web(target_round_label):
         {"type": "web_fetch_20260209", "name": "web_fetch"},
     ]
     prompt = f"""あなたはロト7の予想を横断収集する専門リサーチャーです。
-ウェブ検索を使い、日本のロト7「{target_round_label}」の予想を載せている予想サイト・ブログ・YouTube動画を、できるだけ多く（目標10件以上）探してください。
+ウェブ検索を使い、日本のロト7「{target_round_label}」の予想を載せている予想サイト・ブログ・YouTube動画を、主要なもの6〜8件ほど効率的に探してください。
 各ソースが「予想・推奨・狙い目・本命」として挙げている数字（1〜37）を抽出します。
 
-厳守ルール:
+厳守ルール（コスト節約のため検索は最小限に）:
+- 検索は多くても5回程度にとどめ、有望なページだけを開く。
 - 過去の当選結果・抽選日・回号・金額・順位は予想ではないので必ず除外する。
 - 各ソースの予想数字（1〜37の範囲のみ）を集める。
 - YouTubeはタイトル・概要・コメント等のテキストから読み取れる数字のみ対象（動画内の音声は対象外）。
@@ -336,8 +341,8 @@ def research_predictions_via_web(target_round_label):
     messages = [{"role": "user", "content": prompt}]
     text = ""
     try:
-        for _ in range(8):
-            res = client.messages.create(model=ANTHROPIC_MODEL, max_tokens=8000, tools=tools, messages=messages)
+        for _ in range(4):
+            res = client.messages.create(model=MODEL_MAIN, max_tokens=3000, tools=tools, messages=messages)
             if res.stop_reason == "pause_turn":
                 messages.append({"role": "assistant", "content": res.content})
                 continue
@@ -738,7 +743,7 @@ def get_ai_intuition_numbers(feeling, weather, gravity, target_date):
 - 地球の引力: {gravity} / 天気: {weather}
 - 抽選予定日: {target_date}
 理由・説明・絵文字は一切出力せず、「7, 15, 32」のようにカンマ区切りの数字だけを出力してください。"""
-    text = ask_claude(prompt, max_tokens=100)
+    text = ask_claude(prompt, max_tokens=80, model=MODEL_LIGHT)
     if not text:
         return random.sample(range(1, LOTO_MAX_NUM + 1), 3)
     seen = []
@@ -1143,7 +1148,7 @@ elif st.session_state.menu == "最終予測決定":
 {ai_prompt}
 """
                         try:
-                            res_text = ask_claude(prompt, system=AWAKENED_SCIENTIST_PROMPT, max_tokens=6000)
+                            res_text = ask_claude(prompt, system=AWAKENED_SCIENTIST_PROMPT, max_tokens=2500)
                             if not res_text:
                                 raise RuntimeError("Claudeからの応答が空でした（ANTHROPIC_API_KEY 未設定の可能性があります）")
                             st.markdown(f"#### 🎯 最終決断レポート（10億捕捉の{buy_count}口）")
@@ -1227,7 +1232,7 @@ elif st.session_state.menu == "結果発表と振り返り":
 【ユーザーからの依頼】: "{user_rev_input}"
 """
                     try:
-                        res_text = ask_claude(prompt, system=REVIEW_PDCA_PROMPT, max_tokens=5000)
+                        res_text = ask_claude(prompt, system=REVIEW_PDCA_PROMPT, max_tokens=2000)
                         if not res_text:
                             raise RuntimeError("Claudeからの応答が空でした（ANTHROPIC_API_KEY 未設定の可能性があります）")
                         st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
@@ -1289,7 +1294,7 @@ elif st.session_state.menu == "結果発表と振り返り":
 
 上記の実データから、ご主人が当選しやすい『地球の動き・宇宙の配置・暦の波長』の共通法則を多角的に特定せよ。そして4等・3等・2等・1等へ引き上げるために『次にどの環境条件の日を狙い撃つべきか』『どの見えないセンサーを研ぎ澄ますべきか』を、確信を持って具体的に指示せよ。"""
                         try:
-                            res_text = ask_claude(win_prompt, system=REVIEW_PDCA_PROMPT, max_tokens=5000)
+                            res_text = ask_claude(win_prompt, system=REVIEW_PDCA_PROMPT, max_tokens=2000)
                             if not res_text:
                                 raise RuntimeError("Claudeからの応答が空でした（ANTHROPIC_API_KEY 未設定の可能性があります）")
                             st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
