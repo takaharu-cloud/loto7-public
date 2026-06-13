@@ -211,12 +211,16 @@ FORTUNE_CHAT_PROMPT = f"""
 def get_external_trend(filepath="other_sites.txt"):
     trend = Counter()
     text_data = ""
-    # 1. スプレッドシートからの読み込み（iPhoneからの入力補助連携）
+    # 1. スプレッドシートからの読み込み（自動巡回 or 手入力に両対応）
     try:
         df_ext = load_sheet("他サイト予想")
         if not df_ext.empty:
-            text_data += " ".join(df_ext.astype(str).values.flatten()) + " "
-    except Exception as e: 
+            # 「予想数字」列があればそれだけを読む（日付やURLの数字がノイズとして混入するのを防ぐ）
+            if "予想数字" in df_ext.columns:
+                text_data += " ".join(df_ext["予想数字"].astype(str).tolist()) + " "
+            else:
+                text_data += " ".join(df_ext.astype(str).values.flatten()) + " "
+    except Exception as e:
         st.warning(f"スプレッドシートからの「他サイト予想」取得に失敗しました: {e}")
     
     # 2. ローカルの other_sites.txt からの読み込み
@@ -231,6 +235,230 @@ def get_external_trend(filepath="other_sites.txt"):
     valid_nums = [int(n) for n in nums if 1 <= int(n) <= LOTO_MAX_NUM]
     trend.update(valid_nums)
     return trend
+
+# 🚀 【進化3】予想サイトを自動巡回し、Claudeで予想数字を抽出して「他サイト予想」を更新
+def collect_other_site_predictions():
+    """
+    「予想サイトURL」シートに並べたURLを巡回し、各ページ本文からClaudeが
+    『予想として提示された数字（1〜37）』だけを抽出。結果で「他サイト予想」を丸ごと上書きする。
+    戻り値: (結果DataFrame, エラーメッセージ or None)
+    """
+    if not api_key:
+        return None, "Claudeのキー（ANTHROPIC_API_KEY）が未設定のため、自動抽出ができません。"
+
+    df_urls = load_sheet("予想サイトURL")
+    if df_urls.empty:
+        return None, "「予想サイトURL」シートが空です。A1に見出し『URL』を入れ、A2から予想サイトのURLを1行ずつ貼り付けてください。"
+
+    # 全セルから http で始まる文字列をURLとして収集（重複除去）
+    urls = []
+    for val in df_urls.astype(str).values.flatten():
+        v = val.strip()
+        if v.startswith("http") and v not in urls:
+            urls.append(v)
+    if not urls:
+        return None, "有効なURL（httpで始まるもの）が見つかりませんでした。"
+
+    now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
+    results = []
+    progress = st.progress(0.0)
+    for i, url in enumerate(urls):
+        try:
+            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            res.encoding = res.apparent_encoding
+            soup = BeautifulSoup(res.text, "html.parser")
+            for tag in soup(["script", "style", "noscript"]):
+                tag.decompose()
+            page_text = re.sub(r'\s+', ' ', soup.get_text(" ")).strip()[:8000]
+        except Exception as e:
+            results.append({"サイトURL": url, "予想数字": "", "状態": f"取得失敗: {e}", "取得日時": now_str})
+            progress.progress((i + 1) / len(urls))
+            continue
+
+        if not page_text:
+            results.append({"サイトURL": url, "予想数字": "", "状態": "本文を取得できず（JavaScript描画サイトの可能性）", "取得日時": now_str})
+            progress.progress((i + 1) / len(urls))
+            continue
+
+        prompt = f"""次のWebページ本文から、ロト7（1〜37の数字）の「予想・推奨として提示されている数字」だけを抽出してください。
+- 過去の当選結果・抽選日・回号・金額・順位などは予想ではないので必ず除外する。
+- 「予想」「おすすめ」「狙い目」「本命」等として挙げられた数字のみを対象にする。
+- 出力は「7, 15, 21, 30, 33」のようにカンマ区切りの数字だけ。説明や文章は一切書かない。
+- 予想数字が見つからなければ、何も出力しない（空）。
+
+本文:
+{page_text}"""
+        text = ask_claude(prompt, max_tokens=200) or ""
+        found = sorted({int(n) for n in re.findall(r'\d+', text) if 1 <= int(n) <= LOTO_MAX_NUM})
+        results.append({
+            "サイトURL": url,
+            "予想数字": ", ".join(str(n) for n in found),
+            "状態": "OK" if found else "予想数字が見つからず",
+            "取得日時": now_str,
+        })
+        progress.progress((i + 1) / len(urls))
+
+    df_out = pd.DataFrame(results, columns=["サイトURL", "予想数字", "状態", "取得日時"])
+    save_sheet("他サイト予想", df_out)  # 丸ごと上書き＝古い内容は自動削除
+    return df_out, None
+
+# 🚀 【進化4】URL登録不要：Claudeがウェブを全自動検索して予想サイト・YouTubeを横断収集
+def research_predictions_via_web(target_round_label):
+    """
+    Claudeのウェブ検索ツールを使い、指定回号のロト7予想を載せたサイト・ブログ・YouTubeを
+    自動で広く探し、各ソースの予想数字（1〜37）を抽出して「他サイト予想」を丸ごと更新する。
+    戻り値: (結果DataFrame, エラーメッセージ or None)
+    """
+    client = get_claude_client()
+    if client is None:
+        return None, "Claudeのキー（ANTHROPIC_API_KEY）が未設定です。"
+
+    tools = [
+        {"type": "web_search_20260209", "name": "web_search"},
+        {"type": "web_fetch_20260209", "name": "web_fetch"},
+    ]
+    prompt = f"""あなたはロト7の予想を横断収集する専門リサーチャーです。
+ウェブ検索を使い、日本のロト7「{target_round_label}」の予想を載せている予想サイト・ブログ・YouTube動画を、できるだけ多く（目標10件以上）探してください。
+各ソースが「予想・推奨・狙い目・本命」として挙げている数字（1〜37）を抽出します。
+
+厳守ルール:
+- 過去の当選結果・抽選日・回号・金額・順位は予想ではないので必ず除外する。
+- 各ソースの予想数字（1〜37の範囲のみ）を集める。
+- YouTubeはタイトル・概要・コメント等のテキストから読み取れる数字のみ対象（動画内の音声は対象外）。
+- 同じソースを重複させない。
+
+最後に、必ず次の形式のJSONだけを ```json コードブロックで出力してください:
+```json
+[
+  {{"source": "サイト名やチャンネル名", "url": "https://...", "numbers": [3, 12, 19, 25, 31]}}
+]
+```"""
+    messages = [{"role": "user", "content": prompt}]
+    text = ""
+    try:
+        for _ in range(8):
+            res = client.messages.create(model=ANTHROPIC_MODEL, max_tokens=8000, tools=tools, messages=messages)
+            if res.stop_reason == "pause_turn":
+                messages.append({"role": "assistant", "content": res.content})
+                continue
+            text = "".join(b.text for b in res.content if b.type == "text")
+            break
+    except Exception as e:
+        return None, f"ウェブ検索に失敗しました。Anthropicの管理画面でWeb search（ウェブ検索ツール）が有効か、課金残高があるかをご確認ください: {e}"
+
+    # JSON抽出（コードブロック優先、なければ最初の配列）
+    raw = ""
+    m = re.search(r'```json\s*(.+?)\s*```', text, re.DOTALL)
+    if m:
+        raw = m.group(1)
+    else:
+        m2 = re.search(r'\[.*\]', text, re.DOTALL)
+        raw = m2.group(0) if m2 else ""
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return None, "検索はできましたが、結果を数字リストに変換できませんでした。もう一度お試しください。"
+    if not isinstance(data, list):
+        return None, "検索結果の形式が想定と異なりました。もう一度お試しください。"
+
+    now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
+    rows = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        nums = set()
+        for n in item.get("numbers", []):
+            try:
+                v = int(n)
+            except Exception:
+                continue
+            if 1 <= v <= LOTO_MAX_NUM:
+                nums.add(v)
+        if not nums:
+            continue
+        rows.append({
+            "対象回号": target_round_label,
+            "ソース": str(item.get("source", ""))[:60],
+            "URL": str(item.get("url", ""))[:300],
+            "予想数字": ", ".join(str(n) for n in sorted(nums)),
+            "取得日時": now_str,
+        })
+    if not rows:
+        return None, "予想数字を含むソースが見つかりませんでした。少し時間をおいて再度お試しください。"
+
+    df_out = pd.DataFrame(rows, columns=["対象回号", "ソース", "URL", "予想数字", "取得日時"])
+    save_sheet("他サイト予想", df_out)  # 丸ごと上書き＝古い内容は自動削除
+    return df_out, None
+
+# 🚀 【進化5】他サイト予想の横断分析（人気ランキング／自分の予想との差／正解に近いサイト）
+def render_other_site_analysis(df_other, target_round_label):
+    if df_other is None or df_other.empty:
+        st.info("分析できる他サイト予想データがありません。先に自動検索で収集してください。")
+        return
+    all_nums = []
+    col = "予想数字" if "予想数字" in df_other.columns else None
+    cells = df_other[col].astype(str).tolist() if col else df_other.astype(str).values.flatten().tolist()
+    for s in cells:
+        all_nums += [int(x) for x in re.findall(r'\d+', str(s)) if 1 <= int(x) <= LOTO_MAX_NUM]
+    if not all_nums:
+        st.info("予想数字が抽出できていません。")
+        return
+    consensus = Counter(all_nums)
+    total_sites = len(df_other)
+
+    st.markdown("#### 📊 全予想サイト横断ランキング（多くのサイトが推している数字）")
+    rank_df = pd.DataFrame([
+        {"順位": i + 1, "数字": str(n).zfill(2), "推すサイト数": c, "支持率": f"{round(c / total_sites * 100)}%"}
+        for i, (n, c) in enumerate(consensus.most_common())
+    ])
+    st.dataframe(rank_df, height=350)
+    hot = sorted([n for n, _ in consensus.most_common(7)])
+    st.write(f"🔥 全サイト人気トップ7: **{hot}**")
+
+    # 自分の予想との比較
+    df_note = load_sheet("予測ノート")
+    if not df_note.empty and "対象回号" in df_note.columns:
+        mine = df_note[df_note["対象回号"] == target_round_label]
+        my_nums = set()
+        for _, row in mine.iterrows():
+            for i in range(1, LOTO_PICK_COUNT + 1):
+                v = row.get(f"数字{i}")
+                if str(v).isdigit():
+                    my_nums.add(int(v))
+        if my_nums:
+            top10 = set(n for n, _ in consensus.most_common(10))
+            st.markdown("#### 🆚 あなたの予想 vs サイトの総意")
+            st.write(f"あなたが{target_round_label}で予想した数字のうち、サイト人気トップ10と一致: **{sorted(my_nums & top10)}**")
+            st.write(f"サイト人気トップ10で、あなたがまだ入れていない数字: **{sorted(top10 - my_nums)}**")
+
+    # 正解との照合（抽選後）→ どのソースが一番近かったか
+    df_real = load_sheet("実データ")
+    rn = re.findall(r'\d+', str(target_round_label))
+    actual = set()
+    if rn and not df_real.empty and "回号" in df_real.columns:
+        match = df_real[df_real["回号"] == f"第{rn[0]}回"]
+        if not match.empty:
+            for i in range(1, LOTO_PICK_COUNT + 1):
+                v = match.iloc[0].get(f"数字{i}")
+                if str(v).isdigit():
+                    actual.add(int(v))
+    if actual:
+        st.markdown("#### 🏆 正解との照合：どのサイトが一番近かったか")
+        st.write(f"正解番号（{target_round_label}）: **{sorted(actual)}**")
+        board = []
+        for _, row in df_other.iterrows():
+            snums = set(int(x) for x in re.findall(r'\d+', str(row.get("予想数字", ""))) if 1 <= int(x) <= LOTO_MAX_NUM)
+            board.append({
+                "ソース": row.get("ソース", row.get("サイトURL", "")),
+                "的中数": len(snums & actual),
+                "予想数字": row.get("予想数字", ""),
+            })
+        board.sort(key=lambda x: x["的中数"], reverse=True)
+        st.dataframe(pd.DataFrame(board))
+        if board and board[0]["的中数"] > 0:
+            st.success(f"最も正解に近かったのは「{board[0]['ソース']}」で {board[0]['的中数']}個的中でした。")
+    else:
+        st.info(f"{target_round_label}はまだ抽選前（または実データ未取得）のため、『どのサイトが正解に近いか』は抽選後に表示されます。")
 
 # 🚀 【進化2】固定バイアスを破壊する「動的量子シード」生成関数
 def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, good_deed):
@@ -586,8 +814,30 @@ elif st.session_state.menu == "最新データ取得":
                 else: 
                     auto_check_hits(load_sheet("予測ノート"), df_real)
                     st.info("データベースは既に最新です。既存の予測ノートの再採点を行いました。")
-            except Exception as e: 
+            except Exception as e:
                 st.error(f"データの同期・解析中にエラーが発生しました: {e}")
+
+    st.markdown("---")
+    st.markdown("### 🌐 他サイト予想の全自動収集＆横断分析（URL登録不要）")
+    st.markdown("<div class='info-box'>URLを登録する必要はありません。<b>Claudeがウェブを自動で検索し、ロト7の予想サイト・ブログ・YouTubeをできるだけ多く探し出して</b>、各ソースの予想数字を抽出し『他サイト予想』シートを丸ごと更新します。そのうえで、<b>「どの数字が人気で何位か」「あなたの予想との違い」「（抽選後）どのサイトが正解に一番近かったか」</b>まで分析します。<br>※YouTubeはタイトル・概要・コメントの文字から読める数字のみ対象（動画内の音声は読めません）。</div>", unsafe_allow_html=True)
+    df_real0 = load_sheet("実データ")
+    next_round, _ = get_next_round_info(df_real0)
+    rounds_for_search = [f"第{next_round + i}回" for i in range(-3, 3)]
+    target_round_label = st.selectbox("どの回号の予想を集めますか？", rounds_for_search, index=rounds_for_search.index(f"第{next_round}回") if f"第{next_round}回" in rounds_for_search else 0)
+
+    ccol1, ccol2 = st.columns(2)
+    if ccol1.button("🌐 ウェブを全自動検索して予想を収集する", use_container_width=True):
+        with st.spinner("Claudeがウェブを検索し、予想サイト・YouTubeを横断収集しています（30秒〜1分かかります）..."):
+            df_collected, err = research_predictions_via_web(target_round_label)
+        if err:
+            st.warning(err)
+        else:
+            st.success(f"{len(df_collected)}件のソースから予想を収集し、『他サイト予想』を更新しました。")
+            st.dataframe(df_collected)
+            render_other_site_analysis(df_collected, target_round_label)
+
+    if ccol2.button("📊 収集済みデータで横断分析する", use_container_width=True):
+        render_other_site_analysis(load_sheet("他サイト予想"), target_round_label)
 
 elif st.session_state.menu == "日々の予想・積上げ":
     st.title("🌍 地球規模の量子環境分析＆日々の予測積上げ")
