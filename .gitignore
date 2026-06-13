@@ -11,3 +11,6 @@ __pycache__/
 
 # ログ・一時ファイル
 *.log
+
+# Claude Code のローカル設定
+.claude/
