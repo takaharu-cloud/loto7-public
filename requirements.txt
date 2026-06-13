@@ -2,7 +2,7 @@ streamlit
 pandas
 requests
 beautifulsoup4
-google-generativeai
+anthropic
 gspread
 google-auth
 Pillow
