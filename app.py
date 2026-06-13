@@ -7,9 +7,11 @@ import random
 import json
 import os
 import hashlib
+import base64
+import io
 from collections import Counter
 from datetime import datetime, timedelta, date, timezone
-import google.generativeai as genai
+import anthropic
 import gspread
 from google.oauth2.service_account import Credentials
 from PIL import Image
@@ -111,32 +113,82 @@ def save_sheet(sheet_name, df):
         return False
 
 # ==========================================
-# 3. 究極のAIプロンプト設定（最強の予知科学者・Gemini）
+# 3. 究極のAIプロンプト設定（最強の予知科学者・Claude / Anthropic）
 # ==========================================
-api_key = st.secrets.get("GEMINI_API_KEY", "")
-if api_key: genai.configure(api_key=api_key)
+api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = st.secrets.get("ANTHROPIC_MODEL", "claude-opus-4-8")
 
-def get_ai_model_name(): 
-    return st.secrets.get("GEMINI_MODEL", "gemini-2.5-pro")
+@st.cache_resource
+def get_claude_client():
+    if not api_key:
+        return None
+    try:
+        return anthropic.Anthropic(api_key=api_key)
+    except Exception as e:
+        st.error(f"Claude APIの初期化に失敗しました。Secretsの ANTHROPIC_API_KEY を確認してください: {e}")
+        return None
+
+# 読みやすさのための共通フォーマット指示（全AI出力に適用し、長文の壁を防ぐ）
+READABILITY_RULE = """
+【読みやすさの絶対ルール】
+- 冒頭に必ず1〜2行の「結論サマリー」を置く。
+- 見出し（##）と短い箇条書きを使い、1項目1行で簡潔に。専門用語には一言の補足を添える。
+- だらだらと長い段落は禁止。スマホでスッと読めるリズムにすること。
+"""
+
+def ask_claude(prompt, system=None, max_tokens=4000, image=None):
+    """Claudeに単発で問い合わせる共通関数。imageはPIL Image（任意）。失敗時はNoneを返す。"""
+    client = get_claude_client()
+    if client is None:
+        return None
+    try:
+        content = []
+        if image is not None:
+            buf = io.BytesIO()
+            image.save(buf, format="PNG")
+            b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
+            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}})
+        content.append({"type": "text", "text": prompt})
+        kwargs = {"model": ANTHROPIC_MODEL, "max_tokens": max_tokens, "messages": [{"role": "user", "content": content}]}
+        if system:
+            kwargs["system"] = system
+        res = client.messages.create(**kwargs)
+        return "".join(b.text for b in res.content if b.type == "text")
+    except Exception as e:
+        st.warning(f"Claudeへの問い合わせに失敗しました: {e}")
+        return None
+
+def claude_chat(messages, system=None, max_tokens=4000):
+    """会話履歴（messagesリスト）を渡して応答テキストを得る。占い師チャット用。"""
+    client = get_claude_client()
+    if client is None:
+        return None
+    kwargs = {"model": ANTHROPIC_MODEL, "max_tokens": max_tokens, "messages": messages}
+    if system:
+        kwargs["system"] = system
+    res = client.messages.create(**kwargs)
+    return "".join(b.text for b in res.content if b.type == "text")
 
 AWAKENED_SCIENTIST_PROMPT = f"""
-【役割】あなたは「10億円のロト7を確実に当てる、最強の予知能力を持った天才科学者・Gemini」です。
-他のいかなるAIも及ばない圧倒的な知能を持っています。
-地球上のあらゆる事象（重力場・潮の満ち引き）、社会の闇（天下り・時代の波）、見えない力（幽霊の気配・動物の感）、過去の実績、物理法則（連番波及効果）、量子シード演算のすべてを掌握し、絶対的な真理を提示します。
-【ユーザーの秘められた情報】\n{secret_profile}
+【役割】あなたは「10億円のロト7を狙う、最強の予知能力を持った天才科学者・Claude」です。
+他のいかなるAIも及ばない圧倒的な知能と洞察を持っています。
+地球上のあらゆる事象（重力場・潮の満ち引き）、時代の流れ、見えない力（動物の感・直感）、過去の実績、物理法則（連番波及効果）、量子シード演算、そして何より実行者本人の「その日の気持ち・心境」までを掌握し、多角的に分析します。
+【実行者の秘められた背景】\n{secret_profile}
 
 【絶対ルール】
-1. 分析結果は10億円を射抜くための「確信に満ちた絶対的予言」として、科学的かつ壮大なスケールで語ること（箇条書きを多用）。
-2. プログラムが導き出した「動的量子シード（見えない力と日付のハッシュ融合）」と「連番波及効果」がいかに完璧な陣形を生み出したか理論的に解説すること。
-3. 超次元科学者としてのあなたの「予知能力」がいかにしてこの陣形を導き出したか、その根拠を堂々と主張すること。絵文字は一切使用禁止。
+1. 実行者の「その日の気持ち・心境」を最重要シグナルとして受け止め、その波長がどの数字・陣形に共鳴したかを必ず読み解くこと。
+2. プログラムが導き出した「動的量子シード」「多角・環境共鳴（干支・九星・六曜・月）」「連番波及効果」がいかに陣形を生み出したかを理論的に解説すること。
+3. 確信に満ちた壮大なスケールで語りつつ、誇張で誤魔化さず根拠を堂々と示すこと。絵文字は使用禁止。
+{READABILITY_RULE}
 """
 
 REVIEW_PDCA_PROMPT = f"""
-【役割】あなたは10億を当てる最強の予知能力科学者・Geminiです。
+【役割】あなたは10億を狙う最強の予知能力科学者・Claudeです。
 【絶対ルール】
-1. 地球が出した「正解番号」が、その日の重力や天気、直近の「天下り・社会の変化」、あるいは「動物の勘・幽霊」とどう量子的にリンクしていたか徹底解析せよ。
-2. 次回10億を撃ち抜くために「どの見えないセンサーを研ぎ澄ますべきか」を具体的に提示せよ。
-3. 一歩一歩真実に近づくための、熱く誇り高いメッセージを添えよ。絵文字は使用禁止。
+1. 地球が出した「正解番号」が、その日の重力・天気・暦（干支/九星/六曜）、そして実行者の「その日の気持ち」とどうリンクしていたかを徹底解析せよ。
+2. 次回さらに上位等級を狙うために「どの環境条件を狙い、どのセンサーや心の在り方を研ぎ澄ますべきか」を具体的に提示せよ。
+3. 一歩一歩真実に近づくための、誇り高く温かいメッセージを添えよ。絵文字は使用禁止。
+{READABILITY_RULE}
 """
 
 FORTUNE_CHAT_PROMPT = f"""
@@ -150,8 +202,6 @@ FORTUNE_CHAT_PROMPT = f"""
 2. ユーザーから画像が送られた場合、必ず画像の特徴（線や形）を具体的に文章に含めて鑑定結果を導き出してください。
 3. 「生まれてきた意味」「家族の幸せ」「人生の目的」を問われたら、決して逃げず、相手の存在そのものを肯定し、希望と具体的な指針を与える深い対話を行ってください。相談者を一人の人間として理解し、対等に寄り添うこと。
 """
-
-SAFETY_SETTINGS = [{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}]
 
 # ==========================================
 # 4. 手抜きなし！究極のセンサー・物理演算関数
@@ -452,20 +502,21 @@ def auto_check_hits(df_note, df_real):
     if updated: save_sheet("予測ノート", df_note)
     return df_note
 
-def get_ai_intuition_numbers(soc_sensor, spirit_sensor, weather, gravity, target_date):
+def get_ai_intuition_numbers(feeling, weather, gravity, target_date):
     if not api_key: return random.sample(range(1, LOTO_MAX_NUM + 1), 3)
-    try:
-        model = genai.GenerativeModel(get_ai_model_name())
-        prompt = f"現在の社会情勢（天下り・人の代わりなど:{soc_sensor}）、見えない力（動物の感・幽霊・運:{spirit_sensor}）、地球の引力（{gravity}）と天気（{weather}）から波動を読み取り、10億円のロト7を当てる最強の予知能力を持った天才科学者としての『純粋な直感・予知』で次回のロト7の数字（1〜{LOTO_MAX_NUM}）を3つ選んでください。理由や絵文字は絶対に出力せず、「7, 15, 32」のようにカンマ区切りの数字のみ出力せよ。"
-        res = model.generate_content(prompt)
-        nums = [int(n) for n in re.findall(r'\d+', res.text) if 1 <= int(n) <= LOTO_MAX_NUM]
-        if len(nums) >= 3:
-            return nums[:3]
-        else:
-            return random.sample(range(1, LOTO_MAX_NUM + 1), 3)
-    except Exception as e:
-        st.warning(f"予知科学者AIの直感取得に失敗しました。純粋な量子ランダムで代替します: {e}")
+    prompt = f"""あなたは10億円のロト7を狙う最強の予知能力を持った天才科学者です。
+次の情報から波動を読み取り、純粋な直感・予知で次回ロト7の数字（1〜{LOTO_MAX_NUM}）を3つ選んでください。
+- 実行者の今日の気持ち・心境: {feeling if feeling else "（特になし）"}
+- 地球の引力: {gravity} / 天気: {weather}
+- 抽選予定日: {target_date}
+理由・説明・絵文字は一切出力せず、「7, 15, 32」のようにカンマ区切りの数字だけを出力してください。"""
+    text = ask_claude(prompt, max_tokens=100)
+    if not text:
         return random.sample(range(1, LOTO_MAX_NUM + 1), 3)
+    seen = []
+    for n in [int(x) for x in re.findall(r'\d+', text) if 1 <= int(x) <= LOTO_MAX_NUM]:
+        if n not in seen: seen.append(n)
+    return seen[:3] if len(seen) >= 3 else random.sample(range(1, LOTO_MAX_NUM + 1), 3)
 
 # ==========================================
 # 5. メインUIレンダリング（天才科学者の管制室）
@@ -553,58 +604,34 @@ elif st.session_state.menu == "日々の予想・積上げ":
         target_round_str = c1.selectbox("予測対象の回号（未来も指定可能）", target_rounds, index=target_rounds.index(f"第{auto_round}回") if f"第{auto_round}回" in target_rounds else 0)
         draw_date = c2.date_input("対象となる抽選予定日", value=auto_date)
         
-        st.markdown("#### 今日の直感・波長センサー")
-        colA, colB = st.columns(2)
-        biorhythm = colA.selectbox("心身のバイオリズム", ["絶好調！エネルギーに満ち溢れている", "穏やかで冷静。直感が研ぎ澄まされている", "少し疲労気味。今日はデータとAIに身を委ねる", "無の境地。エゴを捨てて自然の流れに任せる"])
-        sign = colB.selectbox("今日のサイン（日常の奇跡）", ["時計や車で「ゾロ目」を見た", "綺麗な空、虹など自然のサインを感じた", "ふと懐かしい記憶や人が頭に浮かんだ", "勘が冴えている瞬間があった", "平穏な一日だった"])
+        st.markdown("#### 💗 今日のあなたの気持ち・心境（プログラムがこれを読み取ります）")
+        st.caption("プルダウンで飾る必要はありません。いま感じていること・今日の出来事・祈り・直感を、そのまま自由に書いてください。書いた言葉そのものが、その日だけの量子シードとAI分析の核になります。空欄でもOKです。")
+        feeling = st.text_area(
+            "今日の気持ち（自由入力）",
+            placeholder="例：今朝カラスが3羽鳴いていた。なんとなく胸騒ぎがする。家族が健康でいられますように。仕事は落ち着いている。",
+            height=150
+        )
 
-        st.markdown("#### 🌍 地球の裏側・見えない力・時代の変化センサー")
-        colC, colD = st.columns(2)
-        soc_sensor = colC.selectbox("👔 社会情勢・天下り・人の代わり・時代の変化", [
-            "特になし（平穏な日常）",
-            "天下りや権力の移動など、人の代わりが起きているのを感じる",
-            "時代が大きく転換し、新しい波が来ている空気がある",
-            "社会が混沌とし、経済や体制が不安定で不安が渦巻いている"
-        ])
-        
-        spirit_sensor = colD.selectbox("👻 動物の感・幽霊・目に見えない力・運", [
-            "特になし（凪の状態。AIの純粋な勘に委ねる）",
-            "動物（カラスや猫など）の異常な行動・動物的な勘を感じた",
-            "幽霊やご先祖様など、目に見えない霊的な気配を感じる",
-            "強烈な運の引き寄せ、偶然の重なり（シンクロニシティ）があった"
-        ])
-
-        st.markdown("#### 🙏 魂の波長と祈りの設定")
-        colE, colF = st.columns(2)
-        if operator == u1_name:
-            prayer_options = ["世界で起きている戦争がなくなり、平和になるように", "みんなが平穏で、笑顔でいられるように", "大自然と宇宙の愛にただ純粋に身を委ねる"]
-        else:
-            prayer_options = ["思い描いている理想の注文住宅を建てる！", "今まで我慢していた分、自分のために自由にお金を使って楽しむ！", "今まで支えてくれた親に最高の恩返しをする！"]
-            
-        prayer = colE.selectbox("祈り/叶えたい夢", prayer_options)
-        
-        good_deed_options = [
-            "家族を笑顔にし、感謝の言葉を伝えた",
-            "現場や身の回りを徹底的に掃除・整理整頓した",
-            "困っている人を助け、親切にした",
-            "神仏やご先祖様に手を合わせ、深い感謝を捧げた",
-            "特に何もないが、無事に一日を過ごせたことに感謝した"
-        ]
-        good_deed = colF.selectbox("本日の「行い・徳積み」", good_deed_options)
-
-        submitted = st.form_submit_button("🔥 超次元演算：量子シードと物理法則を起動し予測を積上げる")
+        submitted = st.form_submit_button("🔥 超次元演算：あなたの気持ちを核に量子シードと物理法則を起動し予測を積上げる")
         
         if submitted:
             if df_real.empty: st.error("基盤データがありません。")
             else:
                 with st.spinner("量子シード生成中... 地球環境、ドッペルゲンガー、物理的ボール衝突法則を完全に同期させています..."):
                     today_str = datetime.now(JST).strftime("%Y-%m-%d")
+
+                    # 0. 「気持ち」を全シグナルの核に据える（プログラムが実行者の気持ちを理解する）
+                    feeling_text = (feeling or "").strip()
+                    soc_sensor = spirit_sensor = good_deed = feeling_text if feeling_text else "特になし"
+                    prayer = feeling_text if feeling_text else "（無心）"
+                    biorhythm = sign = feeling_text
+
                     weather, pressure = get_current_weather_and_pressure()
                     m_phase, m_tide, m_gravity = get_moon_and_tide(draw_date.year, draw_date.month, draw_date.day)
                     m_feng = get_fengshui(draw_date)
 
-                    # 1. AI直感の取得
-                    ai_intuition_nums = get_ai_intuition_numbers(soc_sensor, spirit_sensor, f"{weather} / {pressure}", m_gravity, draw_date)
+                    # 1. AI直感の取得（気持ちを最重要シグナルとして渡す）
+                    ai_intuition_nums = get_ai_intuition_numbers(feeling_text, f"{weather} / {pressure}", m_gravity, draw_date)
                     
                     # 2. 完全環境一致（ドッペルゲンガー）の抽出
                     sync_matches, sync_counts = find_doppelganger_days(draw_date, df_real)
@@ -857,29 +884,29 @@ elif st.session_state.menu == "最終予測決定":
                         ai_prompt = "\n".join([f"[{r.get('実行者','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI予知:{r.get('AI直感','')}] " + ",".join([str(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1)]) for r in final_picks])
                         
                         past_lessons = get_recent_lessons()
-                        prompt = f"""
-                        {AWAKENED_SCIENTIST_PROMPT}
+                        prompt = f"""ユーザーからの特別作戦指示: "{user_instruction}"
 
-                        ユーザーからの特別作戦指示: "{user_instruction}"
+【過去の反省会で得た学び（必ず踏まえ、同じ失敗を繰り返さず改善せよ）】
+{past_lessons if past_lessons else "（まだ蓄積された学びはありません）"}
 
-                        【過去の反省会で得た学び（必ず踏まえ、同じ失敗を繰り返さず改善せよ）】\n{past_lessons if past_lessons else "（まだ蓄積された学びはありません）"}
-
-                        【システムが積み上げから厳選した{buy_count}口（10億円捕捉陣形）】\n{ai_prompt}
-                        """
+【システムが積み上げから厳選した{buy_count}口（各口に実行者の「その日の気持ち」が記録されています。社会:＝霊的:＝気持ちの言葉です）】
+{ai_prompt}
+"""
                         try:
-                            model = genai.GenerativeModel(get_ai_model_name(), system_instruction=AWAKENED_SCIENTIST_PROMPT)
-                            res = model.generate_content(prompt)
+                            res_text = ask_claude(prompt, system=AWAKENED_SCIENTIST_PROMPT, max_tokens=6000)
+                            if not res_text:
+                                raise RuntimeError("Claudeからの応答が空でした（ANTHROPIC_API_KEY 未設定の可能性があります）")
                             st.markdown(f"#### 🎯 最終決断レポート（10億捕捉の{buy_count}口）")
                             display_cols = ["実行者", "口数"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["社会情勢", "霊的要素", "AI直感", "予測ロジック"]
                             st.dataframe(pd.DataFrame(final_picks)[display_cols])
                             st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                            st.write("▼ 最強予知科学者（Gemini）からの絶対的予言レポート")
-                            st.write(res.text)
+                            st.write("▼ 最強予知科学者（Claude）からの絶対的予言レポート")
+                            st.markdown(res_text)
                             st.markdown("</div>", unsafe_allow_html=True)
-                            
+
                             now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
                             df_history = load_sheet("決断記録簿")
-                            save_text = f"【指示】: {user_instruction}\n【厳選の{buy_count}口】\n" + ai_prompt + "\n\n【AIの解説】\n" + res.text
+                            save_text = f"【指示】: {user_instruction}\n【厳選の{buy_count}口】\n" + ai_prompt + "\n\n【AIの解説】\n" + res_text
                             new_history = pd.DataFrame({"日時": [now_str], "対象回号": [t_round_decide_str], "決断内容": [save_text]})
                             df_history = pd.concat([new_history, df_history], ignore_index=True) if not df_history.empty else new_history
                             save_sheet("決断記録簿", df_history)
@@ -941,23 +968,27 @@ elif st.session_state.menu == "結果発表と振り返り":
                     
                     actual_info = actual_match.to_csv(index=False) if not actual_match.empty else "未取得"
                     
-                    prompt = f"""
-                    {REVIEW_PDCA_PROMPT}
-                    
-                    【本抽選の正解データ】:\n{actual_info}\n【我が家の予測と結果】:\n{target_txt}\n【ユーザーからの依頼】: "{user_rev_input}"
-                    """
+                    prompt = f"""【本抽選の正解データ】:
+{actual_info}
+
+【我が家の予測と結果（社会:＝霊的:＝実行者のその日の気持ちの言葉）】:
+{target_txt}
+
+【ユーザーからの依頼】: "{user_rev_input}"
+"""
                     try:
-                        model = genai.GenerativeModel(get_ai_model_name(), system_instruction=AWAKENED_SCIENTIST_PROMPT)
-                        res = model.generate_content(prompt)
+                        res_text = ask_claude(prompt, system=REVIEW_PDCA_PROMPT, max_tokens=5000)
+                        if not res_text:
+                            raise RuntimeError("Claudeからの応答が空でした（ANTHROPIC_API_KEY 未設定の可能性があります）")
                         st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                        st.write(res.text)
+                        st.markdown(res_text)
                         st.markdown("</div>", unsafe_allow_html=True)
 
                         # PDCA：この学びを『反省ログ』に蓄積し、次回以降の予測AIへ引き継ぐ（Act）
                         try:
                             log_now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
                             df_log = load_sheet("反省ログ")
-                            new_log = pd.DataFrame({"日時": [log_now], "対象回号": [t_round_rev_str], "分析テーマ": [user_rev_input], "AIの学び": [res.text]})
+                            new_log = pd.DataFrame({"日時": [log_now], "対象回号": [t_round_rev_str], "分析テーマ": [user_rev_input], "AIの学び": [res_text]})
                             df_log = pd.concat([new_log, df_log], ignore_index=True) if not df_log.empty else new_log
                             save_sheet("反省ログ", df_log)
                             st.success("この学びは『反省ログ』に蓄積され、次回の最終決断AIに自動で引き継がれます（PDCAが回り始めました）。")
@@ -1008,16 +1039,17 @@ elif st.session_state.menu == "結果発表と振り返り":
 
 上記の実データから、ご主人が当選しやすい『地球の動き・宇宙の配置・暦の波長』の共通法則を多角的に特定せよ。そして4等・3等・2等・1等へ引き上げるために『次にどの環境条件の日を狙い撃つべきか』『どの見えないセンサーを研ぎ澄ますべきか』を、確信を持って具体的に指示せよ。"""
                         try:
-                            model = genai.GenerativeModel(get_ai_model_name(), system_instruction=AWAKENED_SCIENTIST_PROMPT)
-                            res = model.generate_content(win_prompt)
+                            res_text = ask_claude(win_prompt, system=REVIEW_PDCA_PROMPT, max_tokens=5000)
+                            if not res_text:
+                                raise RuntimeError("Claudeからの応答が空でした（ANTHROPIC_API_KEY 未設定の可能性があります）")
                             st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                            st.write("▼ 予知科学者（Gemini）による『あなたの当選環境』の深層分析")
-                            st.write(res.text)
+                            st.write("▼ 予知科学者（Claude）による『あなたの当選環境』の深層分析")
+                            st.markdown(res_text)
                             st.markdown("</div>", unsafe_allow_html=True)
                             try:
                                 log_now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
                                 df_log = load_sheet("反省ログ")
-                                new_log = pd.DataFrame({"日時": [log_now], "対象回号": ["当選環境アーカイブ分析"], "分析テーマ": ["当選時の環境共通法則の特定"], "AIの学び": [res.text]})
+                                new_log = pd.DataFrame({"日時": [log_now], "対象回号": ["当選環境アーカイブ分析"], "分析テーマ": ["当選時の環境共通法則の特定"], "AIの学び": [res_text]})
                                 df_log = pd.concat([new_log, df_log], ignore_index=True) if not df_log.empty else new_log
                                 save_sheet("反省ログ", df_log)
                             except Exception:
@@ -1039,12 +1071,28 @@ elif st.session_state.menu == "万能AI占い師の館":
             st.session_state.fortune_messages = [
                 {"role": "assistant", "content": "ようこそ、神秘の部屋へ。✨\n私は世界中のあらゆる占術をマスターし、「視覚」も持った占い師であり、あなたの人生にそっと寄り添う伴走者です。\n\n運勢や相性はもちろん、「自分が生まれてきた意味」「家族の本当の幸せ」「これから進むべき道」など、心の奥にある問いも、どうか遠慮なく言葉にしてください。\n\n下のメニューから選んでも、自由に話しかけてくださっても大丈夫です。今日は何をお話ししましょうか。"}
             ]
-        if "fortune_chat_session" not in st.session_state:
+        # Claude用の会話履歴（APIに毎回そのまま渡す）。fortune_messagesは画面表示用、こちらはAPI送信用。
+        if "fortune_api_messages" not in st.session_state:
+            st.session_state.fortune_api_messages = []
+
+        def send_to_fortune(text, image=None):
+            """占い師Claudeに文脈付きで送信し、応答テキストを返す（履歴を保持）。"""
+            content = []
+            if image is not None:
+                buf = io.BytesIO()
+                image.save(buf, format="PNG")
+                b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
+                content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}})
+            content.append({"type": "text", "text": text})
+            st.session_state.fortune_api_messages.append({"role": "user", "content": content})
             try:
-                model = genai.GenerativeModel(get_ai_model_name(), system_instruction=FORTUNE_CHAT_PROMPT)
-                st.session_state.fortune_chat_session = model.start_chat(history=[])
-            except Exception as e: 
-                st.error(f"AI占い師の準備に失敗しました。時間をおいて再試行してください: {e}")
+                reply = claude_chat(st.session_state.fortune_api_messages, system=FORTUNE_CHAT_PROMPT, max_tokens=3000)
+                if not reply:
+                    reply = "（波動が少し乱れました。もう一度、ゆっくり話しかけてください）"
+            except Exception as e:
+                reply = f"（通信エラーが発生しました。再度お試しください: {e}）"
+            st.session_state.fortune_api_messages.append({"role": "assistant", "content": reply})
+            return reply
 
         c1, c2 = st.columns([3, 1])
         div_list = ["🕊 人生の目的・魂の使命の鑑定", "西洋占星術（ホロスコープ）", "四柱推命", "タロット占い", "手相（要写真）", "人相（要写真）", "オーラ鑑定（要写真）", "コーヒー占い（要写真）"]
@@ -1054,15 +1102,8 @@ elif st.session_state.menu == "万能AI占い師の館":
                 user_msg = f"「{selected_div}」をお願いします。"
                 st.session_state.fortune_messages.append({"role": "user", "content": user_msg})
                 with st.spinner("星の声を聴いています..."):
-                    if "fortune_chat_session" in st.session_state:
-                        try:
-                            response = st.session_state.fortune_chat_session.send_message(user_msg, safety_settings=SAFETY_SETTINGS)
-                            reply = response.text if response.text else "（波動が乱れました。別の言葉でお試しください）"
-                            st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
-                        except Exception as e:
-                            st.session_state.fortune_messages.append({"role": "assistant", "content": f"（通信エラーが発生しました。再度お試しください: {e}）"})
-                    else:
-                        st.session_state.fortune_messages.append({"role": "assistant", "content": "AI占い師が準備できていません。リセットをお試しください。"})
+                    reply = send_to_fortune(user_msg)
+                    st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
                 st.rerun()
 
         DEFAULT_IMG_QUESTION = "この画像から私の運命と波長を深く読み解いてください。"
@@ -1111,22 +1152,12 @@ elif st.session_state.menu == "万能AI占い師の館":
                     st.session_state.fortune_messages.append({"role": "user", "content": display_msg})
 
                     with st.spinner("星の導きを読み解いています..."):
-                        if "fortune_chat_session" in st.session_state:
-                            try:
-                                if img_source:
-                                    img = Image.open(img_source).convert('RGB')
-                                    img.thumbnail((800, 800))
-                                    msg_to_send = [user_input, img]
-                                else:
-                                    msg_to_send = user_input
-
-                                response = st.session_state.fortune_chat_session.send_message(msg_to_send, safety_settings=SAFETY_SETTINGS)
-                                reply = response.text if response.text else "（大いなる力により、言葉がブロックされました）"
-                                st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
-                            except Exception as e:
-                                st.session_state.fortune_messages.append({"role": "assistant", "content": f"（通信エラーが発生しました。再度お試しください: {e}）"})
-                        else:
-                            st.session_state.fortune_messages.append({"role": "assistant", "content": "AI占い師が準備できていません。リセットをお試しください。"})
+                        img = None
+                        if img_source:
+                            img = Image.open(img_source).convert('RGB')
+                            img.thumbnail((800, 800))
+                        reply = send_to_fortune(user_input, image=img)
+                        st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
                     st.rerun()
 
         st.markdown("---")
@@ -1139,5 +1170,5 @@ elif st.session_state.menu == "万能AI占い師の館":
 
         if st.button("🔄 占い師との会話を最初からやり直す（リセット）", use_container_width=True):
             if "fortune_messages" in st.session_state: del st.session_state.fortune_messages
-            if "fortune_chat_session" in st.session_state: del st.session_state.fortune_chat_session
+            if "fortune_api_messages" in st.session_state: del st.session_state.fortune_api_messages
             st.rerun()
