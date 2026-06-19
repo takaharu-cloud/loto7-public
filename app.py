@@ -691,6 +691,37 @@ def get_trusted_site_numbers(df_real, target_round, top_k=3, min_rounds=2):
                 weights[v] = weights.get(v, 0) + b["平均的中"]
     return weights
 
+# 🚀 【進化13】天気×結果の検証（天気が出目に影響しているかを忖度なしで判定）
+def analyze_weather_correlation(df_real):
+    """天気カテゴリ別に出目傾向（合計・奇数比・高数字比・頻出）を集計。戻り値: (要約テキスト, 表の行リスト)。"""
+    if df_real.empty or "天気" not in df_real.columns:
+        return "", []
+    groups = {}
+    for _, r in df_real.iterrows():
+        w = str(r.get("天気", "")).strip()
+        if not w:
+            continue
+        nums = [int(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(r.get(f"数字{i}", "")).isdigit()]
+        if len(nums) == LOTO_PICK_COUNT:
+            groups.setdefault(w, []).append(nums)
+    rows = []
+    for w, draws in groups.items():
+        n = len(draws)
+        if n == 0:
+            continue
+        avg_sum = round(sum(sum(d) for d in draws) / n, 1)
+        avg_odd = round(sum(sum(1 for x in d if x % 2) for d in draws) / n, 2)
+        avg_high = round(sum(sum(1 for x in d if x >= 19) for d in draws) / n, 2)
+        cnt = Counter(x for d in draws for x in d)
+        top = " ".join(f"{x}({c})" for x, c in cnt.most_common(5))
+        rows.append({"天気": w, "回数": n, "平均合計": avg_sum, "平均奇数個": avg_odd, "平均高数字個(19-37)": avg_high, "頻出": top})
+    rows.sort(key=lambda x: x["回数"], reverse=True)
+    summary = "\n".join(
+        f"{r['天気']}: {r['回数']}回 / 平均合計{r['平均合計']} / 平均奇数{r['平均奇数個']}個 / 平均高数字{r['平均高数字個(19-37)']}個 / 頻出 {r['頻出']}"
+        for r in rows
+    )
+    return summary, rows
+
 # 🚀 【進化2】固定バイアスを破壊する「動的量子シード」生成関数
 def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, good_deed):
     """
@@ -1773,7 +1804,7 @@ elif st.session_state.menu == "最終予測決定":
 
 elif st.session_state.menu == "結果発表と振り返り":
     st.title("🔄 答え合わせと地球規模の反省会")
-    tab1, tab2, tab3, tab4 = st.tabs(["予測の答え合わせ", "💬 宇宙と繋がる徹底反省会（PDCA）", "過去の決断記録簿", "🏆 当選環境アーカイブ分析"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["予測の答え合わせ", "💬 宇宙と繋がる徹底反省会（PDCA）", "過去の決断記録簿", "🏆 当選環境アーカイブ分析", "🌦 天気×結果の検証"])
     
     df_note = load_sheet("予測ノート")
     df_real = load_sheet("実データ")
@@ -1913,6 +1944,33 @@ elif st.session_state.menu == "結果発表と振り返り":
                                 pass
                         except Exception as e:
                             st.error(f"当選環境のAI分析に失敗しました: {e}")
+
+    with tab5:
+        st.markdown("#### 🌦 天気は出目に影響しているか？（忖度なしで検証）")
+        st.caption("各抽選日の東京の実天気（『📚 全期間の当選番号＋天気を取り込む』実行後に有効）と出目の関係を集計し、AIが辛口で『本物の傾向かノイズか』を判定します。")
+        df_real_w = load_sheet("実データ")
+        wsummary, wrows = analyze_weather_correlation(df_real_w)
+        if not wrows:
+            st.info("天気データがありません。先に「📡 最新データ取得」ページの『📚 全期間の当選番号＋天気を取り込む』を実行してください。")
+        else:
+            st.dataframe(pd.DataFrame(wrows))
+            if st.button("🌦 天気×結果をAIに辛口検証してもらう"):
+                if not api_key:
+                    st.error("Claudeのキー（ANTHROPIC_API_KEY）が未設定です。")
+                else:
+                    with st.spinner("天気と出目の関係を辛口で検証しています..."):
+                        wprompt = f"""次は、ロト7の各抽選日の東京の天気カテゴリ別に、当選数字の傾向を集計したものです。
+{wsummary}
+
+問い：天気（晴れ／曇り／雨／嵐 など）と当選数字の傾向（合計・奇数比・高数字比・頻出数字）に、統計的に意味のある関係があると言えるか？
+忖度せず判定せよ。サンプル数の偏りや偶然（ノイズ）に過ぎないなら、はっきり『偶然の範囲＝影響なし』と言い切ること。万一わずかな傾向が見えるなら、その大きさと、過信してはいけない理由も必ず添えよ。"""
+                        wreport = ask_claude(wprompt, system=REVIEW_PDCA_PROMPT, max_tokens=1800)
+                    if wreport:
+                        st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
+                        st.markdown(wreport)
+                        st.markdown("</div>", unsafe_allow_html=True)
+                    else:
+                        st.warning("検証に失敗しました（APIキー／残高をご確認ください）。")
 
 elif st.session_state.menu == "総監督レポート":
     st.title("📋 今週の総監督レポート")
