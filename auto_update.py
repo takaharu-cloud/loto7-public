@@ -275,6 +275,78 @@ def task_collect_sites(client, target_round):
     log(f"他サイト収集 {len(results)}件中 {ok}件抽出・成績ログ記録")
 
 
+SUPERVISOR_SYS = (
+    "あなたはロト7プロジェクトの統括監督Claude。忖度せず、結果→分析→次回を締め、仕組みと習慣を厳しくも公正に鍛える。"
+    "良い週は認め、悪い週は弱点・偏り・油断を容赦なく指摘。励ましで真実をぼかさない。当たらない確率が高い事実から目を逸らさせない。絵文字禁止。"
+    "出力は『## 今週の総括』『## 良かった点 / 外した要因』『## 次回への調整指示』『## 今週のやることチェックリスト』の見出しで簡潔に。"
+)
+
+
+def _round_actual(df_real, label):
+    rn = re.findall(r"\d+", str(label))
+    s = set()
+    if rn and not df_real.empty and "回号" in df_real.columns:
+        m = df_real[df_real["回号"] == f"第{rn[0]}回"]
+        if not m.empty:
+            for i in range(1, LOTO_PICK_COUNT + 1):
+                v = m.iloc[0].get(f"数字{i}")
+                if str(v).isdigit():
+                    s.add(int(v))
+    return s
+
+
+def task_supervisor_report(client, anthropic_key):
+    """抽選後、総監督レポート（総括＋次回指示）を自動生成し『反省ログ』に保存（次回予測AIにも反映）。"""
+    if not anthropic_key:
+        log("⚠ ANTHROPIC_API_KEY 無し：総監督レポートはスキップ")
+        return
+    df_real = load_sheet(client, "実データ")
+    df_note = load_sheet(client, "予測ノート")
+    if df_real.empty or "回号" not in df_real.columns:
+        return
+    mx = max((int(re.findall(r"\d+", str(v))[0]) for v in df_real["回号"].astype(str) if re.findall(r"\d+", str(v))), default=0)
+    if not mx:
+        return
+    last_label = f"第{mx}回"
+    actual = _round_actual(df_real, last_label)
+    best, lens = 0, {}
+    if not df_note.empty and "AIの助言" in df_note.columns:
+        for _, r in df_note.iterrows():
+            mm = re.search(r"(\d+)個的中", str(r.get("AIの助言", "")))
+            if not mm:
+                continue
+            h = int(mm.group(1))
+            if str(r.get("対象回号", "")) == last_label:
+                best = max(best, h)
+            lens.setdefault(str(r.get("予測ロジック", "")), []).append(h)
+    lens_rank = sorted(((k, round(sum(v) / len(v), 2), len(v)) for k, v in lens.items() if v), key=lambda x: x[1], reverse=True)[:5]
+    lessons = ""
+    df_log = load_sheet(client, "反省ログ")
+    if not df_log.empty and "AIの学び" in df_log.columns:
+        lessons = "\n---\n".join(df_log.head(2)["AIの学び"].astype(str).tolist())
+    summary = (f"直近 {last_label} の正解: {sorted(actual) if actual else '未取得'}\n"
+               f"あなたの最高的中: {best}個\n"
+               f"レンズ別 平均的中(上位): " + ", ".join(f"{k}={a}({n}口)" for k, a, n in lens_rank) + "\n"
+               f"過去の学び:\n{lessons or 'なし'}")
+    try:
+        import anthropic
+        ac = anthropic.Anthropic(api_key=anthropic_key)
+        res = ac.messages.create(
+            model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"), max_tokens=1800, system=SUPERVISOR_SYS,
+            messages=[{"role": "user", "content": "次のロト7運用状況を統括監督として講評し、次回への具体的な調整指示まで出してください。\n\n" + summary}],
+        )
+        report = "".join(b.text for b in res.content if b.type == "text")
+    except Exception as e:
+        log(f"総監督レポート生成失敗: {e}")
+        return
+    if report:
+        now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+        new = pd.DataFrame({"日時": [now], "対象回号": [f"自動総監督({last_label})"], "分析テーマ": ["週次自動レポート"], "AIの学び": [report]})
+        merged = pd.concat([new, df_log], ignore_index=True) if not df_log.empty else new
+        save_sheet(client, "反省ログ", merged)
+        log("総監督レポートを自動生成→『反省ログ』に保存")
+
+
 def next_round_label(client):
     df_real = load_sheet(client, "実データ")
     mx = 0
@@ -314,6 +386,10 @@ def main():
             task_score(client)
         except Exception as e:
             errors += 1; log(f"❌ 採点でエラー: {e}")
+        try:
+            task_supervisor_report(client, os.environ.get("ANTHROPIC_API_KEY", ""))
+        except Exception as e:
+            errors += 1; log(f"❌ 総監督レポート生成でエラー: {e}")
     if mode in ("all", "collect"):
         if os.environ.get("ANTHROPIC_API_KEY"):
             try:
