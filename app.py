@@ -1868,20 +1868,15 @@ elif st.session_state.menu == "最終予測決定":
     
     st.markdown("<div class='radio-box'>", unsafe_allow_html=True)
     c1, c2 = st.columns([1, 2])
-    t_round_decide_str = c1.selectbox("決断を下す回号を選択", available_rounds)
-    buy_count = c2.radio("勝負する購入口数を選択", [10, 20, 30], index=1, horizontal=True)
+    default_round = f"第{auto_round}回"  # 常に最新（次に買う回）を初期選択に
+    t_round_decide_str = c1.selectbox("決断を下す回号", available_rounds,
+                                      index=available_rounds.index(default_round) if default_round in available_rounds else 0)
+    buy_count = c2.radio("購入口数を選択", [10, 20, 30], index=1, horizontal=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ★手打ち入力排除：AIへの指示もプルダウンに変更し量子加重と連動
-    instruction_options = [
-        "【完全自律】最強の予知科学者として、全次元のデータを統合し最適な10億捕捉陣形を構築せよ",
-        "【社会波長】最近の「天下り・社会の変化」のエネルギーを最優先に組み込んで厳選せよ",
-        "【霊的波長】「動物の勘・幽霊の気配」など不可視のエネルギーを極限まで増幅させよ",
-        "【物理法則】過去の「完全環境一致（ドッペルゲンガー）」とボールの連番効果を最重視せよ",
-        "【徳と祈り】私たち家族の「徳積み」と「平和への祈り」の共鳴を最大化せよ"
-    ]
-    user_instruction = st.selectbox("🧠 AIへの最終調整指示（量子センサーのフォーカス指定）", instruction_options)
-    
+    # AIへの指示は『完全自律』に固定（5択の選択は廃止）。口数を選んでボタンを押すだけ。
+    user_instruction = "【完全自律】最強の予知科学者として、全次元のデータを統合し最適な10億捕捉陣形を構築せよ"
+
     if st.button(f"🔥 蓄積データから {buy_count}口 を厳選し、超次元AIの絶対的予言レポートを生成", type="primary"):
         if not api_key: st.error("APIキーが設定されていません。")
         else:
