@@ -722,6 +722,82 @@ def analyze_weather_correlation(df_real):
     )
     return summary, rows
 
+# 🚀 【進化14】バックテスト：過去データで各レンズが本当に効くか検証（lookahead厳禁・APIゼロ）
+def run_backtest(df_real, window=150):
+    """各抽選回を『その回より前のデータだけ』で予測・採点し、レンズ別にランダム期待値と比較。
+    戻り値: (結果リスト, メタ)。結果が出せない場合は (None, None)。"""
+    draws = []
+    for _, r in df_real.iterrows():
+        rn = re.findall(r'\d+', str(r.get("回号", "")))
+        dn = re.findall(r'\d+', str(r.get("抽せん日", "")))
+        nums = [int(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(r.get(f"数字{i}", "")).isdigit()]
+        if not rn or len(dn) < 3 or len(nums) != LOTO_PICK_COUNT:
+            continue
+        try:
+            d = date(int(dn[0]), int(dn[1]), int(dn[2]))
+        except Exception:
+            continue
+        draws.append((int(rn[0]), d, set(nums)))
+    draws.sort(key=lambda x: x[0])
+    if len(draws) < 70:
+        return None, None
+    window = min(window, len(draws) - 50)
+    start_idx = len(draws) - window
+    EXP = 7.0 / LOTO_MAX_NUM  # ある1数字が当選7個に含まれる確率
+    env_cache = {}
+    def envof(d):
+        if d not in env_cache:
+            env_cache[d] = get_full_environment(d)
+        return env_cache[d]
+    keys = ["ランダム(対照)", "過去頻度", "引っ張り", "スライド", "人気回避(32-37)", "量子シード(対照)", "環境共鳴", "全部入り(合成)"]
+    acc = {k: [0.0, 0.0, 0] for k in keys}
+    for i in range(start_idx, len(draws)):
+        _, ddate, actual = draws[i]
+        prior = draws[:i]  # ← その回より前だけ（未来は一切使わない）
+        last = prior[-1][2] if prior else set()
+        cnt = Counter(n for _, _, s in prior for n in s)
+        tenv = envof(ddate)
+        ecnt = Counter()
+        for _, pdate, ps in prior:
+            penv = envof(pdate)
+            if sum(w for ax, w in ENV_AXIS_WEIGHTS.items() if tenv.get(ax) == penv.get(ax)) >= 100:
+                for n in ps:
+                    ecnt[n] += 1
+        fav = {
+            "ランダム(対照)": set(random.sample(range(1, LOTO_MAX_NUM + 1), 7)),
+            "過去頻度": set(n for n, _ in cnt.most_common(7)),
+            "引っ張り": set(last),
+            "スライド": set(n + dl for n in last for dl in (-1, 1) if 1 <= n + dl <= LOTO_MAX_NUM and (n + dl) not in last),
+            "人気回避(32-37)": set(range(32, LOTO_MAX_NUM + 1)),
+            "量子シード(対照)": set(generate_dynamic_quantum_seed(str(ddate), "", "", "", "")),
+            "環境共鳴": set(n for n, _ in ecnt.most_common(7)),
+        }
+        combo = Counter()
+        for n in fav["過去頻度"]: combo[n] += 1
+        for n in fav["引っ張り"]: combo[n] += 2
+        for n in fav["スライド"]: combo[n] += 1
+        for n in fav["量子シード(対照)"]: combo[n] += 2
+        for n in fav["環境共鳴"]: combo[n] += 2
+        for n in fav["人気回避(32-37)"]: combo[n] += 1
+        fav["全部入り(合成)"] = set(n for n, _ in combo.most_common(7))
+        for k, fset in fav.items():
+            if fset:
+                acc[k][0] += len(fset & actual)
+                acc[k][1] += len(fset) * EXP
+                acc[k][2] += 1
+    results = []
+    for k in keys:
+        sh, se, n = acc[k]
+        if n == 0:
+            continue
+        avg_hit, avg_exp = sh / n, se / n
+        results.append({
+            "レンズ": k, "平均的中": round(avg_hit, 3), "ランダム期待": round(avg_exp, 3),
+            "リフト(倍)": round(avg_hit / avg_exp, 3) if avg_exp > 0 else 0, "検証回数": n,
+        })
+    results.sort(key=lambda x: x["リフト(倍)"], reverse=True)
+    return results, {"検証回数": window, "全データ数": len(draws)}
+
 # 🚀 【進化2】固定バイアスを破壊する「動的量子シード」生成関数
 def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, good_deed):
     """
@@ -1821,7 +1897,7 @@ elif st.session_state.menu == "最終予測決定":
 
 elif st.session_state.menu == "結果発表と振り返り":
     st.title("🔄 答え合わせと地球規模の反省会")
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["予測の答え合わせ", "💬 宇宙と繋がる徹底反省会（PDCA）", "過去の決断記録簿", "🏆 当選環境アーカイブ分析", "🌦 天気×結果の検証"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["予測の答え合わせ", "💬 宇宙と繋がる徹底反省会（PDCA）", "過去の決断記録簿", "🏆 当選環境アーカイブ分析", "🌦 天気×結果の検証", "🔬 バックテスト（本物か検証）"])
     
     df_note = load_sheet("予測ノート")
     df_real = load_sheet("実データ")
@@ -1988,6 +2064,30 @@ elif st.session_state.menu == "結果発表と振り返り":
                         st.markdown("</div>", unsafe_allow_html=True)
                     else:
                         st.warning("検証に失敗しました（APIキー／残高をご確認ください）。")
+
+    with tab6:
+        st.markdown("#### 🔬 バックテスト：このシステムは本当に効くのか？（忖度なし・APIゼロ）")
+        st.caption("過去の全データを使い、各回を『その回より前のデータだけ』で予測して採点。各レンズが『ランダム期待値』より当たっているかを比べます。未来データは一切使いません（lookahead禁止）。")
+        df_bt = load_sheet("実データ")
+        cN = st.slider("検証する回数（直近から）", 50, 400, 150, 50)
+        if st.button("🔬 バックテストを実行する（数秒）"):
+            with st.spinner("過去データで各レンズを検証しています..."):
+                results, meta = run_backtest(df_bt, window=cN)
+            if not results:
+                st.info("データが足りません。先に「📡 最新データ取得」の『📚 全期間の当選番号＋天気を取り込む』を実行してください。")
+            else:
+                st.caption(f"検証回数 {meta['検証回数']}（全 {meta['全データ数']} 回中・直近から）")
+                st.dataframe(pd.DataFrame(results))
+                best = max(results, key=lambda x: x["リフト(倍)"])
+                st.markdown("##### 判定（忖度なし）")
+                lines = ["- リフト = 平均的中 ÷ ランダム期待。**1.0付近＝偶然＝実力なし**の意味です。",
+                         "- 『ランダム(対照)』『量子シード(対照)』は基準線。これらと差がないレンズは“効いていない”ということ。"]
+                if best["リフト(倍)"] <= 1.12:
+                    lines.append(f"- 最も高い「{best['レンズ']}」でもリフト **{best['リフト(倍)']}倍**。つまり**事実上どのレンズもランダムと差なし**。多角分析は『当てる力』ではなく『納得して楽しむ体験・差別化』と割り切るのが正直な結論です（確率は動かないという事実と一致）。")
+                else:
+                    lines.append(f"- 「{best['レンズ']}」がリフト **{best['リフト(倍)']}倍**で頭一つ出ています。ただし検証回数{meta['検証回数']}では ±0.1〜0.15 は誤差の範囲。1回の結果で飛びつかず、回数を変えて再検証を。")
+                lines.append("- 多数のレンズを比べると偶然どれかが上振れします（多重比較）。**上位＝本物**とは限りません。")
+                st.markdown("\n".join(lines))
 
 elif st.session_state.menu == "総監督レポート":
     st.title("📋 今週の総監督レポート")
