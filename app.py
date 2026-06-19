@@ -750,7 +750,10 @@ def run_backtest(df_real, window=150):
             env_cache[d] = get_full_environment(d)
         return env_cache[d]
     keys = ["ランダム(対照)", "過去頻度", "引っ張り", "スライド", "人気回避(32-37)", "量子シード(対照)", "環境共鳴", "全部入り(合成)"]
-    acc = {k: [0.0, 0.0, 0] for k in keys}
+    edges = {k: [] for k in keys}   # 各回の (実的中 − ランダム期待) を保持し、SE/z値を出す
+    hitsum = {k: 0.0 for k in keys}
+    expsum = {k: 0.0 for k in keys}
+    sizesum = {k: 0.0 for k in keys}
     for i in range(start_idx, len(draws)):
         _, ddate, actual = draws[i]
         prior = draws[:i]  # ← その回より前だけ（未来は一切使わない）
@@ -764,7 +767,6 @@ def run_backtest(df_real, window=150):
                 for n in ps:
                     ecnt[n] += 1
         fav = {
-            "ランダム(対照)": set(random.sample(range(1, LOTO_MAX_NUM + 1), 7)),
             "過去頻度": set(n for n, _ in cnt.most_common(7)),
             "引っ張り": set(last),
             "スライド": set(n + dl for n in last for dl in (-1, 1) if 1 <= n + dl <= LOTO_MAX_NUM and (n + dl) not in last),
@@ -780,23 +782,33 @@ def run_backtest(df_real, window=150):
         for n in fav["環境共鳴"]: combo[n] += 2
         for n in fav["人気回避(32-37)"]: combo[n] += 1
         fav["全部入り(合成)"] = set(n for n, _ in combo.most_common(7))
+        # ランダム(対照)は単発だとブレるので毎回15セットの平均（基準線を安定化）
+        rc = sum(len(set(random.sample(range(1, LOTO_MAX_NUM + 1), 7)) & actual) for _ in range(15)) / 15.0
+        edges["ランダム(対照)"].append(rc - 7 * EXP); hitsum["ランダム(対照)"] += rc; expsum["ランダム(対照)"] += 7 * EXP; sizesum["ランダム(対照)"] += 7
         for k, fset in fav.items():
-            if fset:
-                acc[k][0] += len(fset & actual)
-                acc[k][1] += len(fset) * EXP
-                acc[k][2] += 1
+            if not fset:
+                continue
+            h, e = len(fset & actual), len(fset) * EXP
+            edges[k].append(h - e); hitsum[k] += h; expsum[k] += e; sizesum[k] += len(fset)
     results = []
     for k in keys:
-        sh, se, n = acc[k]
+        es = edges[k]
+        n = len(es)
         if n == 0:
             continue
-        avg_hit, avg_exp = sh / n, se / n
+        mh, me, sz = hitsum[k] / n, expsum[k] / n, sizesum[k] / n
+        mean_e = sum(es) / n
+        var = sum((x - mean_e) ** 2 for x in es) / n
+        se = (var ** 0.5) / (n ** 0.5)
+        z = (mean_e / se) if se > 0 else 0.0
+        kind = "対照" if "対照" in k else ("合成" if "合成" in k else "実レンズ")
         results.append({
-            "レンズ": k, "平均的中": round(avg_hit, 3), "ランダム期待": round(avg_exp, 3),
-            "リフト(倍)": round(avg_hit / avg_exp, 3) if avg_exp > 0 else 0, "検証回数": n,
+            "レンズ": k, "種別": kind, "平均的中": round(mh, 3), "ランダム期待": round(me, 3),
+            "リフト(倍)": round(mh / me, 3) if me > 0 else 0, "z値(|2|超で要注目)": round(z, 2),
+            "集合サイズ": round(sz, 1), "検証回数": n,
         })
     results.sort(key=lambda x: x["リフト(倍)"], reverse=True)
-    return results, {"検証回数": window, "全データ数": len(draws)}
+    return results, {"全データ数": len(draws), "検証窓": window}
 
 # 🚀 【進化2】固定バイアスを破壊する「動的量子シード」生成関数
 def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, good_deed):
@@ -2076,17 +2088,21 @@ elif st.session_state.menu == "結果発表と振り返り":
             if not results:
                 st.info("データが足りません。先に「📡 最新データ取得」の『📚 全期間の当選番号＋天気を取り込む』を実行してください。")
             else:
-                st.caption(f"検証回数 {meta['検証回数']}（全 {meta['全データ数']} 回中・直近から）")
+                st.caption(f"全 {meta['全データ数']} 回中、直近 約{meta['検証窓']} 回で検証（レンズにより実検証回数は異なります＝表の『検証回数』列）。")
                 st.dataframe(pd.DataFrame(results))
-                best = max(results, key=lambda x: x["リフト(倍)"])
+                real = [r for r in results if r["種別"] == "実レンズ"]
                 st.markdown("##### 判定（忖度なし）")
-                lines = ["- リフト = 平均的中 ÷ ランダム期待。**1.0付近＝偶然＝実力なし**の意味です。",
-                         "- 『ランダム(対照)』『量子シード(対照)』は基準線。これらと差がないレンズは“効いていない”ということ。"]
-                if best["リフト(倍)"] <= 1.12:
-                    lines.append(f"- 最も高い「{best['レンズ']}」でもリフト **{best['リフト(倍)']}倍**。つまり**事実上どのレンズもランダムと差なし**。多角分析は『当てる力』ではなく『納得して楽しむ体験・差別化』と割り切るのが正直な結論です（確率は動かないという事実と一致）。")
-                else:
-                    lines.append(f"- 「{best['レンズ']}」がリフト **{best['リフト(倍)']}倍**で頭一つ出ています。ただし検証回数{meta['検証回数']}では ±0.1〜0.15 は誤差の範囲。1回の結果で飛びつかず、回数を変えて再検証を。")
-                lines.append("- 多数のレンズを比べると偶然どれかが上振れします（多重比較）。**上位＝本物**とは限りません。")
+                lines = [
+                    "- **リフト** ＝ 平均的中 ÷ ランダム期待。1.0付近＝偶然。",
+                    "- **z値** ＝ 偶然からのズレの大きさ。実レンズを6個同時に見るので、**|z|>3で初めて『要注目』**（多重比較を考慮した厳しめ基準。|z|≦2はほぼ確実に偶然）。",
+                    "- 『対照』(ランダム/量子シード)＝基準線、『合成』(全部入り)＝他レンズの寄せ集めで独立検証ではない。どちらも“勝者”ではありません。",
+                ]
+                if real:
+                    top = max(real, key=lambda x: abs(x["z値(|2|超で要注目)"]))
+                    if abs(top["z値(|2|超で要注目)"]) <= 3:
+                        lines.append(f"- 実レンズの最大は「{top['レンズ']}」(z={top['z値(|2|超で要注目)']})。**3σ未満＝実レンズはどれも事実上ランダムと差なし＝『当てる力』は確認できず**。多角分析は『納得して楽しむ体験・差別化』と割り切るのが正直な結論です（確率は動かない事実と一致）。")
+                    else:
+                        lines.append(f"- 実レンズの最大は「{top['レンズ']}」(z={top['z値(|2|超で要注目)']})で3σ超。注目だが、**別期間・別検証窓で再現するか必ず確認**を（一度の上振れを実力と誤認しない）。")
                 st.markdown("\n".join(lines))
 
 elif st.session_state.menu == "総監督レポート":
