@@ -595,6 +595,40 @@ def get_today_fortune_numbers(user=None):
         return []
     return sorted({int(x) for x in re.findall(r'\d+', str(sub.iloc[0].get("数字", ""))) if 1 <= int(x) <= LOTO_MAX_NUM})
 
+# 🚀 【進化10】多角分析レンズ（フェーズ3）：出目理論・人間の欲・縁起日
+def lens_carry_slide(df_real):
+    """出目理論：前回の本数字（引っ張り＝再出しやすい）と、その±1（スライド）を返す。戻り値: (引っ張り, スライド)。"""
+    if df_real.empty:
+        return [], []
+    try:
+        top = df_real.iloc[0]
+        last = sorted({int(top.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(top.get(f"数字{i}", "")).isdigit()})
+    except Exception:
+        last = []
+    slide = sorted({n + d for n in last for d in (-1, 1) if 1 <= n + d <= LOTO_MAX_NUM and (n + d) not in last})
+    return last, slide
+
+def lens_unpopular_numbers():
+    """人間の欲：誕生日で買われやすい1〜31を避け、買われにくい32〜37を僅かに優遇（当選時の分け前を増やす狙い）。"""
+    return list(range(32, LOTO_MAX_NUM + 1))
+
+def lens_auspicious_day(draw_date):
+    """縁起日：天赦日・大安などを簡易判定。戻り値: (ラベルリスト, 縁起が良い日か)。"""
+    labels = []
+    try:
+        eto = get_eto(draw_date)  # 十干十二支
+        m = draw_date.month
+        season = "春" if m in (2, 3, 4) else "夏" if m in (5, 6, 7) else "秋" if m in (8, 9, 10) else "冬"
+        tensha = {"春": "戊寅", "夏": "甲午", "秋": "戊申", "冬": "甲子"}
+        if eto == tensha[season]:
+            labels.append("天赦日")
+        rokuyo, _ = get_real_calendar_info(draw_date)
+        if rokuyo == "大安":
+            labels.append("大安")
+    except Exception:
+        pass
+    return labels, bool(labels)
+
 # 🚀 【進化2】固定バイアスを破壊する「動的量子シード」生成関数
 def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, good_deed):
     """
@@ -1241,22 +1275,31 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     recent_df = df_real.head(10)
                     recent_nums = [int(r.get(f"数字{i}")) for _, r in recent_df.iterrows() for i in range(1, LOTO_PICK_COUNT + 1) if pd.notna(r.get(f"数字{i}")) and str(r.get(f"数字{i}")).isdigit()]
                     recent_counts = Counter(recent_nums)
-                    
+
+                    # フェーズ3：多角分析レンズ
+                    carry_nums, slide_nums = lens_carry_slide(df_real)
+                    unpop_nums = lens_unpopular_numbers()
+                    ausp_labels, ausp_good = lens_auspicious_day(draw_date)
+
                     st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                    st.markdown("### 🔍 地球環境・物理法則・AI予知 同期レポート")
-                    st.write(f"予定日（{draw_date}）の引力状態：**【{m_tide} / {m_phase} / 重力:{m_gravity} / {weather}】**")
-                    st.write(f"🌌 **【動的量子シード】**: {quantum_seed_nums} （今日の宇宙波長から生成された特異数）")
-                    if ai_intuition_nums: st.write(f"🧠 **【予知科学者の直感ナンバー】**: {ai_intuition_nums}")
-                    if fortune_nums: st.write(f"🔮 **【占いラッキーナンバー（控えめ反映）】**: {fortune_nums}")
+                    st.markdown("### 🔭 全方位レポート（観点＝レンズ別）")
+                    st.write(f"🌍 **【自然・引力】** 予定日（{draw_date}）：{m_tide} / {m_phase} / 重力:{m_gravity} / {weather}")
+                    st.write(f"🌌 **【量子シード】**: {quantum_seed_nums} （今日の波長から生成）")
+                    if ai_intuition_nums: st.write(f"🧠 **【AIの直感】**: {ai_intuition_nums}")
+                    if fortune_nums: st.write(f"🔮 **【占いラッキー（控えめ反映）】**: {fortune_nums}")
                     elif use_fortune: st.caption("🔮 占いを加味する設定ですが、今日の占いナンバーが未保存です。占い師の館で『🎯ロト7へ渡す』を押してください。")
-                    if sync_matches:
-                        st.write("🌍 **【過去の完全環境一致日】**:")
-                        for m in sync_matches[:2]: st.write(f" - {m['回号']} ({m['日付']}) | 一致: {m['一致項目']}")
-                        st.write(f"🎯 **【環境共鳴特異ナンバー】**: {hot_sync_nums}")
                     if env_resonance:
-                        st.write(f"🪐 **【多角・環境共鳴ナンバー】**（干支・九星・六曜・月の各軸が過去に示した数字）: {resonance_top}")
+                        st.write(f"🪐 **【暦・環境共鳴（干支・九星・六曜・月）】**: {resonance_top}")
                         axis_brief = " / ".join([f"{ax}:{target_env.get(ax)}" for ax in ENV_AXIS_WEIGHTS])
                         st.caption(f"今回の環境指紋 → {axis_brief}")
+                    if sync_matches:
+                        st.write(f"🎯 **【完全環境一致日（ドッペルゲンガー）】**: {hot_sync_nums}")
+                        for m in sync_matches[:2]: st.caption(f" - {m['回号']} ({m['日付']}) | 一致: {m['一致項目']}")
+                    if carry_nums or slide_nums:
+                        st.write(f"📜 **【出目理論】** 引っ張り(前回再出): {carry_nums} ／ スライド(±1): {slide_nums}")
+                    st.write(f"👥 **【人間の欲】** 買われにくい高数字 {unpop_nums} を僅かに優遇（当たった時の分け前を増やす狙い）")
+                    if ausp_labels:
+                        st.write(f"🗓 **【縁起日】** {' ・ '.join(ausp_labels)} ＝ 縁起の良い日。直感を後押し")
                     st.markdown("</div>", unsafe_allow_html=True)
 
                     # 外部トレンド読み込み（スプレッドシート連動対応）
@@ -1291,6 +1334,16 @@ elif st.session_state.menu == "日々の予想・積上げ":
 
                         # 理論7：占いのラッキーナンバー（任意・控えめ。他シグナルより弱く＝偏りにくい）
                         if n in fortune_nums: base_w += 15
+
+                        # 理論8：出目理論（引っ張り＝前回再出／スライド＝±1）
+                        if n in carry_nums: base_w += 12
+                        if n in slide_nums: base_w += 8
+
+                        # 理論9：人間の欲（買われにくい高数字を僅かに優遇＝当選時の分け前UP狙い）
+                        if n in unpop_nums: base_w += 6
+
+                        # 理論10：縁起日ブースト（縁起の良い日は直感ナンバーを後押し）
+                        if ausp_good and n in ai_intuition_nums: base_w += 8
 
                         base_weights.append(max(1, base_w))
 
