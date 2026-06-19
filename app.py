@@ -1099,6 +1099,34 @@ def compute_my_lens_performance(df_note):
     board.sort(key=lambda x: (x["平均的中"], x["採点口数"]), reverse=True)
     return board
 
+def compute_overall_stats(df_note):
+    """予測ノート全体を集計し、通算成績（採点口数・平均的中・等級別回数・ニアピン）を返す。"""
+    if df_note.empty or "AIの助言" not in df_note.columns:
+        return None
+    hits_list, near_total, dist = [], 0, Counter()
+    for _, r in df_note.iterrows():
+        s = str(r.get("AIの助言", ""))
+        m = re.search(r'(\d+)個的中', s)
+        if not m:
+            continue
+        h = int(m.group(1))
+        hits_list.append(h)
+        dist[h] += 1
+        nm = re.search(r'ニアピン\s*(\d+)', s)
+        if nm:
+            near_total += int(nm.group(1))
+    if not hits_list:
+        return None
+    label = {7: "1等", 6: "2〜3等", 5: "4等", 4: "5等", 3: "6等"}
+    rows = [{"一致個数": f"{h}個", "等級": label.get(h, "—"), "回数(口)": dist[h]} for h in sorted(dist, reverse=True)]
+    return {
+        "総採点口数": len(hits_list),
+        "平均的中": round(sum(hits_list) / len(hits_list), 3),
+        "最高一致": max(hits_list),
+        "ニアピン総数": near_total,
+        "分布": rows,
+    }
+
 def auto_check_hits(df_note, df_real):
     if df_note.empty or df_real.empty: return df_note
     if "AIの助言" not in df_note.columns: df_note["AIの助言"] = "未照合"
@@ -1575,6 +1603,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
             help="探索モード＝30口を『過去頻度・引っ張り・環境共鳴・占い・他サイト…』など別々の可能性に1口ずつ割り当て、抽選後にどのレンズが近かったかを学びます（剪定はしません）。集中モード＝全部を1つの加重に混ぜて厳選。",
         )
 
+        carryover = st.checkbox("💰 今週はキャリーオーバー（高額繰越）— 人気回避を強める", value=False, help="みずほでキャリーオーバー表示の週にON。買われにくい高数字(32-37)を厚めにし、当たった時の『分け前』を最大化する狙い（確率は変わりません）。人気回避は普段も常駐していますが、高額週はさらに強めます。")
+
         submitted = st.form_submit_button("🔥 超次元演算：あなたの気持ちを核に予測を積上げる")
         
         if submitted:
@@ -1638,7 +1668,10 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         for m in sync_matches[:2]: st.caption(f" - {m['回号']} ({m['日付']}) | 一致: {m['一致項目']}")
                     if carry_nums or slide_nums:
                         st.write(f"📜 **【出目理論】** 引っ張り(前回再出): {carry_nums} ／ スライド(±1): {slide_nums}")
-                    st.write(f"👥 **【人間の欲】** 買われにくい高数字 {unpop_nums} を僅かに優遇（当たった時の分け前を増やす狙い）")
+                    if carryover:
+                        st.write(f"💰 **【分け前重視モード：高額キャリーオーバー】** 買われにくい高数字 {unpop_nums} を強めに優遇（当たった時の取り分を最大化）")
+                    else:
+                        st.write(f"👥 **【人間の欲】** 買われにくい高数字 {unpop_nums} を僅かに優遇（普段も常駐。当たった時の分け前を増やす狙い）")
                     if ausp_labels:
                         st.write(f"🗓 **【縁起日】** {' ・ '.join(ausp_labels)} ＝ 縁起の良い日。直感を後押し")
                     if trusted_site_w:
@@ -1683,8 +1716,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         if n in carry_nums: base_w += 12
                         if n in slide_nums: base_w += 8
 
-                        # 理論9：人間の欲（買われにくい高数字を僅かに優遇＝当選時の分け前UP狙い）
-                        if n in unpop_nums: base_w += 6
+                        # 理論9：人間の欲（買われにくい高数字を優遇＝当選時の分け前UP狙い。高額週はさらに強める）
+                        if n in unpop_nums: base_w += (22 if carryover else 6)
 
                         # 理論10：縁起日ブースト（縁起の良い日は直感ナンバーを後押し）
                         if ausp_good and n in ai_intuition_nums: base_w += 8
@@ -1755,6 +1788,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         }
                         alloc = {"過去頻度(土台)": 6, "引っ張り": 3, "スライド": 2, "環境共鳴(暦)": 3, "量子シード": 2,
                                  "AI直感": 2, "ドッペルゲンガー": 2, "人気回避(高数字)": 2, "占いラッキー": 2, "他サイト成績上位": 3}
+                        if carryover:
+                            alloc["人気回避(高数字)"] = 6  # 高額週は分け前重視で人気回避を厚く
 
                         def make_ticket(favs):
                             favs = [n for n in dict.fromkeys(favs) if 1 <= n <= LOTO_MAX_NUM]
@@ -1970,7 +2005,7 @@ elif st.session_state.menu == "最終予測決定":
 
 elif st.session_state.menu == "結果発表と振り返り":
     st.title("🔄 答え合わせと地球規模の反省会")
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["予測の答え合わせ", "💬 宇宙と繋がる徹底反省会（PDCA）", "過去の決断記録簿", "🏆 当選環境アーカイブ分析", "🌦 天気×結果の検証", "🔬 バックテスト（本物か検証）"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["予測の答え合わせ", "💬 宇宙と繋がる徹底反省会（PDCA）", "過去の決断記録簿", "🏆 当選環境アーカイブ分析", "🌦 天気×結果の検証", "🔬 バックテスト（本物か検証）", "📊 通算成績"])
     
     df_note = load_sheet("予測ノート")
     df_real = load_sheet("実データ")
@@ -2165,6 +2200,31 @@ elif st.session_state.menu == "結果発表と振り返り":
                     else:
                         lines.append(f"- 実レンズの最大は「{top['レンズ']}」(z={top['z値(|2|超で要注目)']})で3σ超。注目だが、**別期間・別検証窓で再現するか必ず確認**を（一度の上振れを実力と誤認しない）。")
                 st.markdown("\n".join(lines))
+
+    with tab7:
+        st.markdown("#### 📊 通算成績（これまで全部の合計）")
+        dfn = load_sheet("予測ノート")
+        ov = compute_overall_stats(dfn)
+        if not ov:
+            st.info("まだ採点済みの予想がありません。予想を積み上げ → 抽選後に『📡 最新データ取得（採点）』を重ねると貯まります。")
+        else:
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("総採点口数", f"{ov['総採点口数']}口")
+            m2.metric("平均的中", f"{ov['平均的中']}個")
+            m3.metric("最高一致", f"{ov['最高一致']}個")
+            m4.metric("ニアピン総数", f"{ov['ニアピン総数']}")
+            st.markdown("##### 等級別の回数")
+            st.dataframe(pd.DataFrame(ov["分布"]))
+            lensb = compute_my_lens_performance(dfn)
+            if lensb:
+                st.markdown("##### レンズ別 累計成績（どの可能性が近いか）")
+                st.dataframe(pd.DataFrame(lensb))
+            st.markdown("##### 収支（任意）")
+            spent_est = ov["総採点口数"] * 300
+            st.caption(f"推定投資額（1口300円換算）：約 {spent_est:,} 円")
+            won = st.number_input("これまでの当選総額（円）を入れると収支が出ます", min_value=0, value=0, step=1000)
+            if won > 0:
+                st.write(f"収支：**{won - spent_est:,} 円**（当選 {won:,} − 推定投資 {spent_est:,}）")
 
 elif st.session_state.menu == "総監督レポート":
     st.title("📋 今週の総監督レポート")
