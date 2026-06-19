@@ -1054,6 +1054,89 @@ def fetch_latest_loto7_via_web(existing_rounds):
         new_data.append([rd, date_str] + [str(n) for n in nums] + ["", "", "", "", m_phase, m_tide, m_gravity])
     return new_data, None
 
+# 🚀 【進化11】全期間バックフィル（第1回〜最新の全当選番号＋東京の実天気を取り込む）
+def weather_label_from_code(code):
+    try:
+        c = int(code)
+    except Exception:
+        return ""
+    if c in (0, 1): return "晴れ"
+    if c in (2, 3, 45, 48): return "曇り"
+    if c in (71, 73, 75, 77, 85, 86): return "雪"
+    if c in (95, 96, 99): return "嵐"
+    return "雨"
+
+def fetch_tokyo_weather_range(start_date, end_date):
+    """東京の過去の日次天気（Open-MeteoのERA5再解析。2013年〜現在を全期間カバー）を範囲取得。
+    戻り値: {YYYY-MM-DD: (天気, 気温, 降水, 気圧)}。"""
+    out = {}
+    try:
+        url = ("https://archive-api.open-meteo.com/v1/archive"
+               f"?latitude=35.69&longitude=139.69&start_date={start_date}&end_date={end_date}"
+               "&daily=weather_code,temperature_2m_mean,precipitation_sum,pressure_msl_mean"
+               "&timezone=Asia%2FTokyo")
+        d = requests.get(url, timeout=60).json().get("daily", {})
+        times = d.get("time", [])
+        wc, tm, pr, ps = d.get("weather_code", []), d.get("temperature_2m_mean", []), d.get("precipitation_sum", []), d.get("pressure_msl_mean", [])
+        for i, t in enumerate(times):
+            out[t] = (
+                weather_label_from_code(wc[i]) if i < len(wc) else "",
+                round(tm[i], 1) if i < len(tm) and tm[i] is not None else "",
+                pr[i] if i < len(pr) and pr[i] is not None else "",
+                round(ps[i]) if i < len(ps) and ps[i] is not None else "",
+            )
+    except Exception as e:
+        st.warning(f"過去天気の取得に一部失敗しました（天気欄は空で続行します）: {e}")
+    return out
+
+def fetch_loto7_full_history():
+    """lotoseven.com から全回の (回号int, 'YYYY-MM-DD', [7数字]) を取得。"""
+    r = requests.get("https://lotoseven.com/ap/tools/show_numbers",
+                     headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=40)
+    soup = BeautifulSoup(r.content.decode(r.apparent_encoding, errors="replace"), "html.parser")
+    rows = []
+    for tr in soup.find_all("tr"):
+        cells = [c.get_text(strip=True) for c in tr.find_all(["td", "th"])]
+        if len(cells) < 9 or not re.fullmatch(r"\d{1,4}", cells[0]):
+            continue
+        m = re.fullmatch(r"(20\d{2})/(\d{1,2})/(\d{1,2})", cells[1])
+        if not m:
+            continue
+        nums = [c for c in cells[2:9] if re.fullmatch(r"\d{1,2}", c)]
+        if len(nums) != 7:
+            continue
+        ymd = f"{int(m.group(1))}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+        rows.append((int(cells[0]), ymd, [c.zfill(2) for c in nums]))
+    return rows
+
+def backfill_full_history():
+    """全回の当選番号＋暦＋東京の実天気で『実データ』を全期間版に再構築。戻り値: (df, エラー)。"""
+    rows = fetch_loto7_full_history()
+    if not rows:
+        return None, "全履歴の取得に失敗しました（取得元の構造が変わった可能性があります）。"
+    rows.sort(key=lambda x: x[0], reverse=True)  # 新しい回を上に
+    dates = [r[1] for r in rows]
+    wmap = fetch_tokyo_weather_range(min(dates), max(dates))
+    data = []
+    for kai, ymd, nums in rows:
+        y, mo, da = (int(v) for v in ymd.split("-"))
+        dd = date(y, mo, da)
+        m_phase, m_tide, m_gravity = get_moon_and_tide(y, mo, da)
+        rokuyo, _ = get_real_calendar_info(dd)
+        w = wmap.get(ymd, ("", "", "", ""))
+        row = {"回号": f"第{kai}回", "抽せん日": ymd}
+        for i, n in enumerate(nums):
+            row[f"数字{i+1}"] = n
+        row.update({"六曜": rokuyo, "干支": get_eto(dd), "風水": get_fengshui(dd), "吉凶日": "特になし",
+                    "月齢": m_phase, "潮回り": m_tide, "重力状態": m_gravity,
+                    "天気": w[0], "気温": w[1], "降水": w[2], "気圧": w[3]})
+        data.append(row)
+    cols = ["回号", "抽せん日"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + \
+           ["六曜", "干支", "風水", "吉凶日", "月齢", "潮回り", "重力状態", "天気", "気温", "降水", "気圧"]
+    df = pd.DataFrame(data, columns=cols)
+    save_sheet("実データ", df)
+    return df, None
+
 # 🚀 【進化9】週次サイクル：金19:30抽選＝リセットを基点に「今日やること」を判定
 def get_week_phase():
     """戻り値: (今日のweekday, 抽選後フラグ, 7日サイクル表示用リスト, 今日のミッション)。
@@ -1188,6 +1271,20 @@ elif st.session_state.menu == "最新データ取得":
                     st.warning("結果の取得元が一時的に不安定で、新しい結果を取得できませんでした。数分おいて再実行してください（既存の予測ノートは再採点しました）。")
             except Exception as e:
                 st.error(f"データの同期・解析中にエラーが発生しました: {e}")
+
+    st.markdown("---")
+    st.markdown("### 📚 過去の全当選番号を一括取り込み（全期間＋日付＋東京の実天気）")
+    st.markdown("<div class='info-box'>第1回〜最新まで<b>全回の当選番号</b>を取り込み、各回の月齢・暦に加え<b>東京（抽選地）の実際の天気（気象庁モデル）</b>も付与します。データが豊富なほど各レンズの傾向分析が鋭くなり、「天気の影響」も検証できます。<br>（実データを全期間版に置き換えます。月1回ほど押せば天気も最新化されます）</div>", unsafe_allow_html=True)
+    if st.button("📚 全期間の当選番号＋天気を取り込む（30秒〜1分）"):
+        with st.spinner("全回の当選番号と、東京の過去天気（気象庁モデル）を取得しています..."):
+            df_full, err = backfill_full_history()
+        if err:
+            st.error(err)
+        else:
+            auto_check_hits(load_sheet("予測ノート"), df_full)
+            st.success(f"全 {len(df_full)} 回の当選番号を取り込み、天気を付与して、全予想を再採点しました！")
+            show_cols = ["回号", "抽せん日"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["天気", "気温", "気圧"]
+            st.dataframe(df_full[[c for c in show_cols if c in df_full.columns]].head(20))
 
     st.markdown("---")
     st.markdown("### 🌐 他サイト予想の全自動収集＆横断分析（URL登録不要）")
