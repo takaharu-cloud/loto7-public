@@ -1,0 +1,30 @@
+name: Loto7 Auto Update
+
+on:
+  schedule:
+    # 金 05:00 JST（= 木 20:00 UTC）：購入前に他サイト予想を収集
+    - cron: "0 20 * * 4"
+    # 土 09:00 JST（= 土 00:00 UTC）：抽選後に結果取得＋全更新＋採点
+    - cron: "0 0 * * 6"
+  workflow_dispatch: {}   # 手動でも実行可能
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests pandas beautifulsoup4 gspread google-auth anthropic
+      - name: Run auto update
+        env:
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_URL: ${{ secrets.SPREADSHEET_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ "$(date -u +%u)" = "4" ]; then
+            python auto_update.py collect
+          else
+            python auto_update.py all
+          fi
