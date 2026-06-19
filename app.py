@@ -1216,8 +1216,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     prayer = feeling_text if feeling_text else "（無心）"
                     biorhythm = sign = feeling_text
 
-                    # 占い × ロト7（任意・控えめ）：実行者本人の今日の占いナンバーを取得
-                    fortune_nums = get_today_fortune_numbers(operator) if use_fortune else []
+                    # 占い × ロト7（任意・控えめ）：今日の占いナンバーを取得
+                    fortune_nums = get_today_fortune_numbers() if use_fortune else []
 
                     weather, pressure = get_current_weather_and_pressure()
                     m_phase, m_tide, m_gravity = get_moon_and_tide(draw_date.year, draw_date.month, draw_date.day)
@@ -1775,46 +1775,47 @@ elif st.session_state.menu == "総監督レポート":
 # ==========================================
 elif st.session_state.menu == "万能AI占い師の館":
     st.title("🔮 万能AI占い師の館（スマホ手打ち不要版）")
-    st.markdown("<div class='info-box'>🔒 ここは<b>あなただけのプライベート相談室</b>。占いはもちろん、悩みや人生のことまで何でも相談できます。会話の内容はスプレッドシートに保存されず、他の人には見えません。（ラッキーナンバーだけは今まで通りシートに記入できます）</div>", unsafe_allow_html=True)
+    st.markdown("<div class='info-box'>占いの相談室です。占い・運勢・ラッキーナンバーは<b>誰でもパスなしで</b>使えます。<br>見られたくない相談だけは、下の<b>「🔒 自分だけのプライベート相談室」</b>に合言葉で入れます（会話は公開の部屋と完全に分かれ、他の人に見えません）。</div>", unsafe_allow_html=True)
 
     if not api_key:
         st.error("占い機能を利用するにはAPIキーの設定が必要です。")
     else:
-        # 🔒 プライバシーロック：人ごとの合言葉で『自分専用の相談室』に入る
-        c1_code = st.secrets.get("FORTUNE_PASSCODE_U1", "") or st.secrets.get("FORTUNE_PASSCODE", "")
-        c2_code = st.secrets.get("FORTUNE_PASSCODE_U2", "")
-        pass_map = {}
-        if c1_code: pass_map[c1_code] = u1_name
-        if c2_code: pass_map[c2_code] = u2_name
+        # 通常は誰でもパス不要で使える『公開の相談室』。
+        # 見られたくない時だけ、合言葉で『自分だけのプライベート相談室』に切り替えられる。
+        private_pass = (st.secrets.get("FORTUNE_PRIVATE_PASSCODE", "")
+                        or st.secrets.get("FORTUNE_PASSCODE_U1", "")
+                        or st.secrets.get("FORTUNE_PASSCODE", ""))
+        in_private = bool(st.session_state.get("fortune_private", False) and private_pass)
 
-        fortune_user = st.session_state.get("fortune_user")
-        if pass_map and not fortune_user:
-            st.markdown("<div class='info-box'>🔒 ここは『自分専用の相談室』です。あなたの合言葉を入力してください。</div>", unsafe_allow_html=True)
-            with st.form("fortune_lock_form"):
-                code_in = st.text_input("あなたの合言葉（パスコード）", type="password")
-                if st.form_submit_button("🔓 解錠する"):
-                    if code_in in pass_map:
-                        st.session_state.fortune_user = pass_map[code_in]
-                        st.rerun()
-                    else:
-                        st.error("合言葉が違います。")
-            st.stop()
-        if not pass_map:
-            st.info("🔓 人ごとに『自分専用の相談室』を作るには、Streamlitの Secrets に  FORTUNE_PASSCODE_U1 = \"夫の合言葉\"  と  FORTUNE_PASSCODE_U2 = \"妻の合言葉\"  を追加してください。合言葉ごとに、互いに見えない別々の相談室になります。")
-            fortune_user = st.selectbox("いまの利用者", [u1_name, u2_name], key="fortune_user_pick")
-        else:
-            st.caption(f"🔓 {fortune_user} さん専用の相談室")
-            if st.button("🔒 退出してロックする（スマホを手放す前に）"):
-                st.session_state.fortune_user = None
+        if in_private:
+            st.markdown("<div class='info-box'>🔒 ここは<b>あなただけのプライベート相談室</b>。会話は公開の部屋と完全に分かれており、他の人には見えません。何でも安心して話してください。</div>", unsafe_allow_html=True)
+            if st.button("🔓 公開の相談室に戻る"):
+                st.session_state.fortune_private = False
                 st.rerun()
+        else:
+            if private_pass:
+                with st.expander("🔒 自分だけのプライベート相談室に入る（合言葉）", expanded=False):
+                    with st.form("fortune_private_form"):
+                        code_in = st.text_input("あなたの合言葉（パスコード）", type="password")
+                        if st.form_submit_button("🔓 入る"):
+                            if code_in == private_pass:
+                                st.session_state.fortune_private = True
+                                st.rerun()
+                            else:
+                                st.error("合言葉が違います。")
+            else:
+                st.caption("🔒 自分だけの非公開の部屋を作るには、Secrets に  FORTUNE_PRIVATE_PASSCODE = \"あなただけの合言葉\"  を追加してください。")
 
-        # 利用者ごとに会話を分離（互いに見えない）
-        msg_key = f"fortune_messages::{fortune_user}"
-        fapi_key = f"fortune_api::{fortune_user}"
+        # 公開／プライベートで会話を分離（プライベートの内容は公開の部屋に出ない）
+        mode_key = "private" if in_private else "public"
+        msg_key = f"fortune_messages::{mode_key}"
+        fapi_key = f"fortune_api::{mode_key}"
         if msg_key not in st.session_state:
-            st.session_state[msg_key] = [
-                {"role": "assistant", "content": f"ようこそ、{fortune_user}さん。神秘の部屋へ。✨\nここはあなただけの相談室です。占いはもちろん、心の奥にある問い——「生まれてきた意味」「家族の幸せ」「これから進むべき道」など——どうか遠慮なく言葉にしてください。\n\n今日は何をお話ししましょうか。"}
-            ]
+            if in_private:
+                welcome = "ようこそ、あなただけの相談室へ。✨\nここでの会話は誰にも見られません。占いも、誰にも言えない悩みも、人生のことも——どうか安心して、何でも話してください。"
+            else:
+                welcome = "ようこそ、神秘の部屋へ。✨\n占い・運勢・相性・ラッキーナンバー、何でもお尋ねください。今日は何をお話ししましょうか。"
+            st.session_state[msg_key] = [{"role": "assistant", "content": welcome}]
         if fapi_key not in st.session_state:
             st.session_state[fapi_key] = []
 
@@ -1906,8 +1907,8 @@ elif st.session_state.menu == "万能AI占い師の館":
                     lucky = extract_lucky_from_text(ln)
 
             if lucky:
-                save_fortune_lucky(lucky, fortune_user)
-                st.success(f"{fortune_user}さんの今日の占いナンバー {lucky} を保存しました。『🌍 予測積上げ』で実行者を{fortune_user}にし「占いを軽く加味する」にチェックすると反映されます（控えめウェイト）。")
+                save_fortune_lucky(lucky)
+                st.success(f"今日の占いナンバー {lucky} を保存しました。『🌍 予測積上げ』で「占いを軽く加味する」にチェックすると反映されます（控えめウェイト）。")
             else:
                 st.warning("占い結果にラッキーナンバーが見つかりませんでした。まず占い師に占ってもらい、数字が出てから押してください。")
 
