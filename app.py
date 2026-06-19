@@ -555,13 +555,18 @@ def site_consensus_hot(df_other, top=7):
     return sorted([n for n, _ in Counter(nums).most_common(top)])
 
 # 🚀 【進化7】占い × ロト7 の橋渡し（偏り対策：別管理＋日付ごと＋控えめ反映）
-def save_fortune_lucky(nums):
-    """占いが出した今日のラッキーナンバーをシート『占いラッキー』に保存（同じ日付は上書き）。"""
+def save_fortune_lucky(nums, user=""):
+    """占いが出した今日のラッキーナンバーをシート『占いラッキー』に保存（同じ日付＋同じ利用者は置き換え）。"""
     today = datetime.now(JST).strftime("%Y-%m-%d")
     df = load_sheet("占いラッキー")
-    rows = df[df["日付"].astype(str) != today].to_dict("records") if (not df.empty and "日付" in df.columns) else []
-    rows.insert(0, {"日付": today, "数字": ", ".join(str(n) for n in nums)})
-    save_sheet("占いラッキー", pd.DataFrame(rows, columns=["日付", "数字"]))
+    rows = []
+    if not df.empty and "日付" in df.columns:
+        for r in df.to_dict("records"):
+            if str(r.get("日付")) == today and str(r.get("利用者", "")) == str(user):
+                continue
+            rows.append(r)
+    rows.insert(0, {"日付": today, "利用者": user, "数字": ", ".join(str(n) for n in nums)})
+    save_sheet("占いラッキー", pd.DataFrame(rows, columns=["日付", "利用者", "数字"]))
 
 def extract_lucky_from_text(text):
     """占いの鑑定文から『ラッキーナンバー』を抽出（最大7個・1〜37・重複除去）。
@@ -577,13 +582,15 @@ def extract_lucky_from_text(text):
             seen.append(v)
     return seen[:7]
 
-def get_today_fortune_numbers():
-    """今日の占いラッキーナンバー（1〜37）を返す。無ければ空。"""
+def get_today_fortune_numbers(user=None):
+    """今日の占いラッキーナンバー（1〜37）を返す。userを指定するとその利用者分のみ。無ければ空。"""
     today = datetime.now(JST).strftime("%Y-%m-%d")
     df = load_sheet("占いラッキー")
     if df.empty or "日付" not in df.columns:
         return []
     sub = df[df["日付"].astype(str) == today]
+    if user is not None and "利用者" in sub.columns:
+        sub = sub[sub["利用者"].astype(str) == str(user)]
     if sub.empty:
         return []
     return sorted({int(x) for x in re.findall(r'\d+', str(sub.iloc[0].get("数字", ""))) if 1 <= int(x) <= LOTO_MAX_NUM})
@@ -1209,8 +1216,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     prayer = feeling_text if feeling_text else "（無心）"
                     biorhythm = sign = feeling_text
 
-                    # 占い × ロト7（任意・控えめ）：今日の占いナンバーを取得
-                    fortune_nums = get_today_fortune_numbers() if use_fortune else []
+                    # 占い × ロト7（任意・控えめ）：実行者本人の今日の占いナンバーを取得
+                    fortune_nums = get_today_fortune_numbers(operator) if use_fortune else []
 
                     weather, pressure = get_current_weather_and_pressure()
                     m_phase, m_tide, m_gravity = get_moon_and_tide(draw_date.year, draw_date.month, draw_date.day)
@@ -1773,36 +1780,46 @@ elif st.session_state.menu == "万能AI占い師の館":
     if not api_key:
         st.error("占い機能を利用するにはAPIキーの設定が必要です。")
     else:
-        # 🔒 プライバシーロック：合言葉を知っている人だけが入れる
-        fortune_passcode = st.secrets.get("FORTUNE_PASSCODE", "")
-        if fortune_passcode and not st.session_state.get("fortune_unlocked", False):
-            st.markdown("<div class='info-box'>🔒 この相談室はロックされています。合言葉を入力してください。</div>", unsafe_allow_html=True)
+        # 🔒 プライバシーロック：人ごとの合言葉で『自分専用の相談室』に入る
+        c1_code = st.secrets.get("FORTUNE_PASSCODE_U1", "") or st.secrets.get("FORTUNE_PASSCODE", "")
+        c2_code = st.secrets.get("FORTUNE_PASSCODE_U2", "")
+        pass_map = {}
+        if c1_code: pass_map[c1_code] = u1_name
+        if c2_code: pass_map[c2_code] = u2_name
+
+        fortune_user = st.session_state.get("fortune_user")
+        if pass_map and not fortune_user:
+            st.markdown("<div class='info-box'>🔒 ここは『自分専用の相談室』です。あなたの合言葉を入力してください。</div>", unsafe_allow_html=True)
             with st.form("fortune_lock_form"):
-                code_in = st.text_input("合言葉（パスコード）", type="password")
+                code_in = st.text_input("あなたの合言葉（パスコード）", type="password")
                 if st.form_submit_button("🔓 解錠する"):
-                    if code_in == fortune_passcode:
-                        st.session_state.fortune_unlocked = True
+                    if code_in in pass_map:
+                        st.session_state.fortune_user = pass_map[code_in]
                         st.rerun()
                     else:
                         st.error("合言葉が違います。")
             st.stop()
-        if not fortune_passcode:
-            st.info("🔓 プライバシー保護を有効にするには、Streamlitの Secrets に  FORTUNE_PASSCODE = \"好きな合言葉\"  を追加してください。設定すると、合言葉を知っている人だけが入れる『あなた専用の相談室』になります。")
+        if not pass_map:
+            st.info("🔓 人ごとに『自分専用の相談室』を作るには、Streamlitの Secrets に  FORTUNE_PASSCODE_U1 = \"夫の合言葉\"  と  FORTUNE_PASSCODE_U2 = \"妻の合言葉\"  を追加してください。合言葉ごとに、互いに見えない別々の相談室になります。")
+            fortune_user = st.selectbox("いまの利用者", [u1_name, u2_name], key="fortune_user_pick")
         else:
+            st.caption(f"🔓 {fortune_user} さん専用の相談室")
             if st.button("🔒 退出してロックする（スマホを手放す前に）"):
-                st.session_state.fortune_unlocked = False
+                st.session_state.fortune_user = None
                 st.rerun()
 
-        if "fortune_messages" not in st.session_state:
-            st.session_state.fortune_messages = [
-                {"role": "assistant", "content": "ようこそ、神秘の部屋へ。✨\n私は世界中のあらゆる占術をマスターし、「視覚」も持った占い師であり、あなたの人生にそっと寄り添う伴走者です。\n\n運勢や相性はもちろん、「自分が生まれてきた意味」「家族の本当の幸せ」「これから進むべき道」など、心の奥にある問いも、どうか遠慮なく言葉にしてください。\n\n下のメニューから選んでも、自由に話しかけてくださっても大丈夫です。今日は何をお話ししましょうか。"}
+        # 利用者ごとに会話を分離（互いに見えない）
+        msg_key = f"fortune_messages::{fortune_user}"
+        fapi_key = f"fortune_api::{fortune_user}"
+        if msg_key not in st.session_state:
+            st.session_state[msg_key] = [
+                {"role": "assistant", "content": f"ようこそ、{fortune_user}さん。神秘の部屋へ。✨\nここはあなただけの相談室です。占いはもちろん、心の奥にある問い——「生まれてきた意味」「家族の幸せ」「これから進むべき道」など——どうか遠慮なく言葉にしてください。\n\n今日は何をお話ししましょうか。"}
             ]
-        # Claude用の会話履歴（APIに毎回そのまま渡す）。fortune_messagesは画面表示用、こちらはAPI送信用。
-        if "fortune_api_messages" not in st.session_state:
-            st.session_state.fortune_api_messages = []
+        if fapi_key not in st.session_state:
+            st.session_state[fapi_key] = []
 
         def send_to_fortune(text, image=None):
-            """占い師Claudeに文脈付きで送信し、応答テキストを返す（履歴を保持）。"""
+            """占い師Claudeに文脈付きで送信し、応答テキストを返す（利用者ごとに履歴を保持）。"""
             content = []
             if image is not None:
                 buf = io.BytesIO()
@@ -1810,14 +1827,14 @@ elif st.session_state.menu == "万能AI占い師の館":
                 b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
                 content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}})
             content.append({"type": "text", "text": text})
-            st.session_state.fortune_api_messages.append({"role": "user", "content": content})
+            st.session_state[fapi_key].append({"role": "user", "content": content})
             try:
-                reply = claude_chat(st.session_state.fortune_api_messages, system=FORTUNE_CHAT_PROMPT, max_tokens=3000)
+                reply = claude_chat(st.session_state[fapi_key], system=FORTUNE_CHAT_PROMPT, max_tokens=3000)
                 if not reply:
                     reply = "（波動が少し乱れました。もう一度、ゆっくり話しかけてください）"
             except Exception as e:
                 reply = f"（通信エラーが発生しました。再度お試しください: {e}）"
-            st.session_state.fortune_api_messages.append({"role": "assistant", "content": reply})
+            st.session_state[fapi_key].append({"role": "assistant", "content": reply})
             return reply
 
         DEFAULT_IMG_QUESTION = "この画像から私の運命と波長を深く読み解いてください。"
@@ -1832,10 +1849,10 @@ elif st.session_state.menu == "万能AI占い師の館":
             if c2.button("この占いを始める", use_container_width=True):
                 if selected_div != "占いを選択してください...":
                     user_msg = f"「{selected_div}」をお願いします。"
-                    st.session_state.fortune_messages.append({"role": "user", "content": user_msg})
+                    st.session_state[msg_key].append({"role": "user", "content": user_msg})
                     with st.spinner("星の声を聴いています..."):
                         reply = send_to_fortune(user_msg)
-                        st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
+                        st.session_state[msg_key].append({"role": "assistant", "content": reply})
                     st.rerun()
 
             fortune_options = [
@@ -1855,22 +1872,22 @@ elif st.session_state.menu == "万能AI占い師の館":
                     if img_source:
                         img = Image.open(img_source).convert('RGB'); img.thumbnail((800, 800))
                     disp = quick_pick if not img else f"📸 写真を送信しました。 {quick_pick}"
-                    st.session_state.fortune_messages.append({"role": "user", "content": disp})
+                    st.session_state[msg_key].append({"role": "user", "content": disp})
                     with st.spinner("星の導きを読み解いています..."):
                         reply = send_to_fortune(quick_pick, image=img)
-                        st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
+                        st.session_state[msg_key].append({"role": "assistant", "content": reply})
                     st.rerun()
 
         # --- 操作ボタン（リセット ／ ロト7への橋渡し）---
         b1, b2 = st.columns(2)
         if b1.button("🔄 会話をリセット", use_container_width=True):
-            for k in ["fortune_messages", "fortune_api_messages"]:
+            for k in [msg_key, fapi_key]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
         if b2.button("🎯 今日の占いナンバーをロト7へ渡す", use_container_width=True):
             # まず、いま占い師がチャットで出している鑑定文からラッキーナンバーを拾う
             last_ai = ""
-            for m in reversed(st.session_state.fortune_messages):
+            for m in reversed(st.session_state[msg_key]):
                 if m["role"] == "assistant":
                     last_ai = m["content"]
                     break
@@ -1879,7 +1896,7 @@ elif st.session_state.menu == "万能AI占い師の館":
             # 鑑定文に数字が無い場合だけ、会話の文脈から数字だけを抽出（抽出専用ペルソナで確実に）
             if not lucky:
                 with st.spinner("占いの結果からラッキーナンバーを読み取っています..."):
-                    temp_msgs = st.session_state.fortune_api_messages + [
+                    temp_msgs = st.session_state[fapi_key] + [
                         {"role": "user", "content": f"これまでの鑑定で出たロト7のラッキーナンバーを、1〜{LOTO_MAX_NUM}の数字だけカンマ区切りで出力してください。日付・年号・順位などの数字は含めないこと。説明は不要です。"}
                     ]
                     try:
@@ -1889,15 +1906,15 @@ elif st.session_state.menu == "万能AI占い師の館":
                     lucky = extract_lucky_from_text(ln)
 
             if lucky:
-                save_fortune_lucky(lucky)
-                st.success(f"今日の占いナンバー {lucky} を保存しました。『🌍 予測積上げ』画面で「占いを軽く加味する」にチェックすると反映されます（偏り防止のため控えめウェイト）。")
+                save_fortune_lucky(lucky, fortune_user)
+                st.success(f"{fortune_user}さんの今日の占いナンバー {lucky} を保存しました。『🌍 予測積上げ』で実行者を{fortune_user}にし「占いを軽く加味する」にチェックすると反映されます（控えめウェイト）。")
             else:
                 st.warning("占い結果にラッキーナンバーが見つかりませんでした。まず占い師に占ってもらい、数字が出てから押してください。")
 
         st.markdown("---")
 
         # --- チャット履歴 ---
-        for msg in st.session_state.fortune_messages:
+        for msg in st.session_state[msg_key]:
             avatar = "🔮" if msg["role"] == "assistant" else "👤"
             with st.chat_message(msg["role"], avatar=avatar):
                 st.markdown(msg["content"])
@@ -1913,8 +1930,8 @@ elif st.session_state.menu == "万能AI占い師の館":
                 text = DEFAULT_IMG_QUESTION
             if text:
                 disp = text if not img else f"📸 写真を送信しました。 {text}"
-                st.session_state.fortune_messages.append({"role": "user", "content": disp})
+                st.session_state[msg_key].append({"role": "user", "content": disp})
                 with st.spinner("星の導きを読み解いています..."):
                     reply = send_to_fortune(text, image=img)
-                    st.session_state.fortune_messages.append({"role": "assistant", "content": reply})
+                    st.session_state[msg_key].append({"role": "assistant", "content": reply})
                 st.rerun()
