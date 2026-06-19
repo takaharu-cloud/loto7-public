@@ -288,14 +288,41 @@ def next_round_label(client):
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "all"
-    client = get_client()
+    # --- Secrets チェック（未設定なら原因をはっきり表示） ---
+    missing = [k for k in ("GCP_SERVICE_ACCOUNT_JSON", "SPREADSHEET_URL") if not os.environ.get(k)]
+    if missing:
+        log("❌ 必要なGitHub Secretsが未設定です: " + ", ".join(missing))
+        log("→ リポジトリ Settings → Secrets and variables → Actions →『New repository secret』で登録してください。")
+        sys.exit(1)
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        log("⚠ ANTHROPIC_API_KEY 未設定：他サイト収集はスキップします（結果取得・採点は実行）。")
+    try:
+        client = get_client()
+    except Exception as e:
+        log(f"❌ スプレッドシート認証に失敗: {e}")
+        log("→ GCP_SERVICE_ACCOUNT_JSON の中身（JSON全文）と、スプレッドシートがサービスアカウントに共有されているかを確認。")
+        sys.exit(1)
+
     log(f"自動更新 開始 (mode={mode})")
+    errors = 0
     if mode in ("all", "results"):
-        task_backfill(client)
-        task_score(client)
+        try:
+            task_backfill(client)
+        except Exception as e:
+            errors += 1; log(f"❌ 結果取り込みでエラー: {e}")
+        try:
+            task_score(client)
+        except Exception as e:
+            errors += 1; log(f"❌ 採点でエラー: {e}")
     if mode in ("all", "collect"):
-        task_collect_sites(client, next_round_label(client))
-    log("自動更新 完了")
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            try:
+                task_collect_sites(client, next_round_label(client))
+            except Exception as e:
+                errors += 1; log(f"❌ 他サイト収集でエラー: {e}")
+    log(f"自動更新 完了（エラー {errors} 件）")
+    if errors:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
