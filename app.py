@@ -1382,6 +1382,23 @@ elif st.session_state.menu == "最新データ取得":
     st.markdown("---")
     st.markdown("### 🏅 他サイト予想：収集・成績ランキング・自動反映（API節約）")
     st.markdown("<div class='info-box'>各サイトの予想を<b>成績ログ</b>に蓄積し、抽選後に採点して<b>『どこが当たっているか』のランキング</b>を作ります。成績上位サイトの予想は、積み上げ時に<b>精度に応じて自動で重み付け反映</b>されます。<br>・<b>節約モード（推奨）</b>：スプレッドシートの『予想サイトURL』シート（A1=URL, A2〜に常連サイトURL）を直接取得＋Haikuで抽出（最安）。<br>・<b>発掘モード</b>：Claudeのウェブ検索で新しいサイトを探す（コスト高め・たまに使う）。</div>", unsafe_allow_html=True)
+    with st.expander("🆕 はじめに：予想サイトURLシートを作成＆おすすめサイトを登録", expanded=False):
+        st.caption("『予想サイトURL』シートを自動作成し、私が動作確認したおすすめ無料予想サイト7件を登録します。あとからスプレッドシートで自由に追加・削除できます。")
+        SEED_PREDICTION_URLS = [
+            "https://www.lotolab.com/loto7/prediction/",
+            "https://umiduki.net/loto7/yosou/",
+            "https://loto7-yosou.info/yosou/yosoku.php",
+            "https://loto7.money-plan.net/guess/",
+            "https://simple-yosou.com/loto7/yosou.html",
+            "https://blog.umasaku.com/loto7top/",
+            "https://loto2num-yosou.com/loto7/yosou.html",
+        ]
+        if st.button("📝 予想サイトURLシートを作成しておすすめ7件を登録する"):
+            if save_sheet("予想サイトURL", pd.DataFrame({"URL": SEED_PREDICTION_URLS})):
+                st.success("『予想サイトURL』シートを作成し、おすすめ7サイトを登録しました。『📋 節約モードで収集』が使えます。")
+            else:
+                st.error("シート作成に失敗しました。データベース接続（Secrets）をご確認ください。")
+
     df_real0 = load_sheet("実データ")
     next_round, _ = get_next_round_info(df_real0)
     rounds_for_search = [f"第{next_round + i}回" for i in range(-3, 3)]
