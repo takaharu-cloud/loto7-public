@@ -1084,6 +1084,21 @@ def detect_prediction_bias(df_note, recent_rounds=4, threshold=0.45):
     except Exception:
         return ""
 
+def compute_my_lens_performance(df_note):
+    """自分の予測ノートを、割り当てたレンズ（予測ロジック）別に採点集計。どの可能性が近いかを学ぶ用（剪定はしない）。"""
+    if df_note.empty or "予測ロジック" not in df_note.columns or "AIの助言" not in df_note.columns:
+        return []
+    stats = {}
+    for _, r in df_note.iterrows():
+        m = re.search(r'(\d+)個的中', str(r.get("AIの助言", "")))
+        if not m:
+            continue
+        lens = str(r.get("予測ロジック", "")).strip() or "不明"
+        stats.setdefault(lens, []).append(int(m.group(1)))
+    board = [{"レンズ(可能性)": k, "採点口数": len(v), "平均的中": round(sum(v) / len(v), 2), "最高的中": max(v)} for k, v in stats.items() if v]
+    board.sort(key=lambda x: (x["平均的中"], x["採点口数"]), reverse=True)
+    return board
+
 def auto_check_hits(df_note, df_real):
     if df_note.empty or df_real.empty: return df_note
     if "AIの助言" not in df_note.columns: df_note["AIの助言"] = "未照合"
@@ -1553,7 +1568,14 @@ elif st.session_state.menu == "日々の予想・積上げ":
 
         use_fortune = st.checkbox("🔮 今日の占いのラッキーナンバーを軽く加味する（偏り防止のため控えめウェイト・任意）", value=False, help="『万能AI占い師の館』で『🎯今日の占いナンバーをロト7へ渡す』を押して保存した数字を、控えめに加点します。")
 
-        submitted = st.form_submit_button("🔥 超次元演算：あなたの気持ちを核に量子シードと物理法則を起動し予測を積上げる")
+        gen_mode = st.radio(
+            "🧪 生成モード",
+            ["🎲 探索モード（1口ずつ違う可能性・各レンズに分散）", "🎯 集中モード（全レンズを合成した加重）"],
+            index=0,
+            help="探索モード＝30口を『過去頻度・引っ張り・環境共鳴・占い・他サイト…』など別々の可能性に1口ずつ割り当て、抽選後にどのレンズが近かったかを学びます（剪定はしません）。集中モード＝全部を1つの加重に混ぜて厳選。",
+        )
+
+        submitted = st.form_submit_button("🔥 超次元演算：あなたの気持ちを核に予測を積上げる")
         
         if submitted:
             if df_real.empty: st.error("基盤データがありません。")
@@ -1712,58 +1734,102 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     base_must = list(set(base_must))
                     while len(base_must) < 4: base_must.append(random.choice(nums_list))
 
-                    # 7. 超並列シミュレーションから30口を抽出
-                    elites = []
-                    for _ in range(SIMULATION_LOOP_COUNT): # 手抜きなし！定数回数ループ
-                        p = random.sample(base_must, random.choice([2, 3]))
-                        while len(p) < LOTO_PICK_COUNT:
-                            ch = random.choices(nums_list, weights=weights_list, k=1)[0]
-                            if ch not in p: p.append(ch)
-                        p.sort()
-                        if not (80 <= sum(p) <= 180): continue
-                        if sum(1 for n in p if n % 2 != 0) not in [2, 3, 4, 5]: continue
-                        
-                        base_pts = sum(weights_list[n-1] for n in p)
-                        
-                        fluctuation_max = 0.2
-                        if "絶好調" in biorhythm or "無の境地" in biorhythm: fluctuation_max += 0.1
-                        if "転換" in soc_sensor or "幽霊" in spirit_sensor: fluctuation_max += 0.1
-                        
-                        ai_yuragi = random.uniform(0, base_pts * fluctuation_max)
-                        elites.append({"nums": p, "pts": base_pts + ai_yuragi, "base_pts": base_pts})
-                    
-                    elites.sort(key=lambda x: x["pts"], reverse=True)
-                    top30, num_usage, added = [], Counter(), set()
-                    TARGET_ELITE = 28
+                    top30, added = [], set()
 
-                    def add_pick(e, max_overlap, usage_cap):
-                        key = tuple(e["nums"])
-                        if key in added: return False
-                        if any(len(set(e["nums"]) & set(t["nums"])) >= max_overlap for t in top30): return False
-                        if usage_cap is not None and any(num_usage[n] >= usage_cap for n in e["nums"]): return False
-                        item = dict(e); item["type"] = logic_name
-                        top30.append(item); added.add(key)
-                        for n in e["nums"]: num_usage[n] += 1
-                        return True
+                    if "探索" in gen_mode:
+                        # 🎲 探索モード：30口を別々の可能性（レンズ）に1口ずつ割り当て、各口にレンズ名を記録。
+                        # 抽選後に『どのレンズが近かったか』を学ぶための“広く張る”戦略（剪定はしない）。
+                        top_freq = [n for n, _ in number_counts.most_common(12)]
+                        site_top = sorted(trusted_site_w, key=lambda k: trusted_site_w[k], reverse=True)[:8] if trusted_site_w else []
+                        lens_favs = {
+                            "過去頻度(土台)": top_freq,
+                            "引っ張り": carry_nums,
+                            "スライド": slide_nums,
+                            "環境共鳴(暦)": resonance_top,
+                            "量子シード": quantum_seed_nums,
+                            "AI直感": ai_intuition_nums,
+                            "ドッペルゲンガー": hot_sync_nums,
+                            "人気回避(高数字)": unpop_nums,
+                            "占いラッキー": fortune_nums,
+                            "他サイト成績上位": site_top,
+                        }
+                        alloc = {"過去頻度(土台)": 6, "引っ張り": 3, "スライド": 2, "環境共鳴(暦)": 3, "量子シード": 2,
+                                 "AI直感": 2, "ドッペルゲンガー": 2, "人気回避(高数字)": 2, "占いラッキー": 2, "他サイト成績上位": 3}
 
-                    # 段階的に制約をゆるめて、目標の28口を確実に確保する（重複/使用回数の上限を順に緩和）
-                    for max_ov, cap in [(4, 7), (4, 10), (4, None), (5, None), (7, None)]:
-                        for e in elites:
+                        def make_ticket(favs):
+                            favs = [n for n in dict.fromkeys(favs) if 1 <= n <= LOTO_MAX_NUM]
+                            seed_k = min(len(favs), random.choice([3, 4, 5]))
+                            p = random.sample(favs, seed_k) if seed_k else []
+                            tries = 0
+                            while len(p) < LOTO_PICK_COUNT and tries < 200:
+                                ch = random.choices(nums_list, weights=weights_list, k=1)[0]
+                                if ch not in p: p.append(ch)
+                                tries += 1
+                            while len(p) < LOTO_PICK_COUNT:
+                                ch = random.choice(nums_list)
+                                if ch not in p: p.append(ch)
+                            return sorted(p)
+
+                        for lens, cnt in alloc.items():
+                            favs = lens_favs.get(lens, [])
+                            for _ in range(cnt):
+                                if len(top30) >= 30: break
+                                t = make_ticket(favs)
+                                for _retry in range(8):
+                                    if tuple(t) not in added: break
+                                    t = make_ticket(favs)
+                                top30.append({"nums": t, "pts": 0, "base_pts": int(sum(weights_list[n - 1] for n in t)), "type": lens})
+                                added.add(tuple(t))
+                        # 残りは「ランダム探索（未知）」で30口まで
+                        while len(top30) < 30:
+                            rp = sorted(random.sample(nums_list, LOTO_PICK_COUNT))
+                            if tuple(rp) in added: continue
+                            top30.append({"nums": rp, "pts": 0, "base_pts": 0, "type": "ランダム探索(未知)"})
+                            added.add(tuple(rp))
+                    else:
+                        # 🎯 集中モード：全レンズを合成した加重から超並列シミュレーションで厳選
+                        elites = []
+                        for _ in range(SIMULATION_LOOP_COUNT):
+                            p = random.sample(base_must, random.choice([2, 3]))
+                            while len(p) < LOTO_PICK_COUNT:
+                                ch = random.choices(nums_list, weights=weights_list, k=1)[0]
+                                if ch not in p: p.append(ch)
+                            p.sort()
+                            if not (80 <= sum(p) <= 180): continue
+                            if sum(1 for n in p if n % 2 != 0) not in [2, 3, 4, 5]: continue
+                            base_pts = sum(weights_list[n - 1] for n in p)
+                            fluctuation_max = 0.2
+                            if "絶好調" in biorhythm or "無の境地" in biorhythm: fluctuation_max += 0.1
+                            if "転換" in soc_sensor or "幽霊" in spirit_sensor: fluctuation_max += 0.1
+                            ai_yuragi = random.uniform(0, base_pts * fluctuation_max)
+                            elites.append({"nums": p, "pts": base_pts + ai_yuragi, "base_pts": base_pts})
+                        elites.sort(key=lambda x: x["pts"], reverse=True)
+                        num_usage = Counter()
+                        TARGET_ELITE = 28
+
+                        def add_pick(e, max_overlap, usage_cap):
+                            key = tuple(e["nums"])
+                            if key in added: return False
+                            if any(len(set(e["nums"]) & set(t["nums"])) >= max_overlap for t in top30): return False
+                            if usage_cap is not None and any(num_usage[n] >= usage_cap for n in e["nums"]): return False
+                            item = dict(e); item["type"] = logic_name
+                            top30.append(item); added.add(key)
+                            for n in e["nums"]: num_usage[n] += 1
+                            return True
+
+                        for max_ov, cap in [(4, 7), (4, 10), (4, None), (5, None), (7, None)]:
+                            for e in elites:
+                                if len(top30) >= TARGET_ELITE: break
+                                add_pick(e, max_ov, cap)
                             if len(top30) >= TARGET_ELITE: break
-                            add_pick(e, max_ov, cap)
-                        if len(top30) >= TARGET_ELITE: break
-
-                    # それでも足りない場合はランダムで補完（重複は除く）
-                    while len(top30) < TARGET_ELITE:
-                        rp = sorted(random.sample(nums_list, LOTO_PICK_COUNT))
-                        if tuple(rp) in added: continue
-                        top30.append({"nums": rp, "pts": 0, "base_pts": 0, "type": logic_name + "(補完)"})
-                        added.add(tuple(rp))
-
-                    # 未知への挑戦：完全ランダム2口（合計30口）
-                    for _ in range(2):
-                        rp = sorted(random.sample(nums_list, LOTO_PICK_COUNT))
-                        top30.append({"nums": rp, "pts": 0, "base_pts": 0, "type": "完全ランダム(未知への挑戦)"})
+                        while len(top30) < TARGET_ELITE:
+                            rp = sorted(random.sample(nums_list, LOTO_PICK_COUNT))
+                            if tuple(rp) in added: continue
+                            top30.append({"nums": rp, "pts": 0, "base_pts": 0, "type": logic_name + "(補完)"})
+                            added.add(tuple(rp))
+                        for _ in range(2):
+                            rp = sorted(random.sample(nums_list, LOTO_PICK_COUNT))
+                            top30.append({"nums": rp, "pts": 0, "base_pts": 0, "type": "完全ランダム(未知への挑戦)"})
                     
                     new_data = []
                     for i, item in enumerate(top30, 1):
@@ -2157,6 +2223,13 @@ elif st.session_state.menu == "総監督レポート":
     bias_warn = detect_prediction_bias(df_note)
     if bias_warn:
         st.warning(f"⚠️ 偏り検知：{bias_warn}")
+
+    # 🎲 自分のレンズ別成績（どの可能性が近かったか＝学習用。剪定はしない）
+    my_lens = compute_my_lens_performance(df_note)
+    if my_lens:
+        st.markdown("#### 🎲 自分のレンズ別成績（どの可能性が近かったか）")
+        st.caption("探索モードで各口に割り当てた『可能性（レンズ）』ごとの平均的中です。広く張って情報を集めるための学習用で、このランキングで剪定はしません。")
+        st.dataframe(pd.DataFrame(my_lens))
 
     # ③ AI監督コメント（APIを使うのでボタン式。1回だけ呼び出し）
     st.markdown("#### ③ AI監督からの総括と次回への指示")
