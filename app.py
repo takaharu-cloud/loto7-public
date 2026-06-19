@@ -1768,11 +1768,31 @@ elif st.session_state.menu == "総監督レポート":
 # ==========================================
 elif st.session_state.menu == "万能AI占い師の館":
     st.title("🔮 万能AI占い師の館（スマホ手打ち不要版）")
-    st.markdown("<div class='info-box'>ここは予測システムとは別の、純粋な占いの空間です。<br><b>自由に話しかけて会話できる「チャット占い」に進化しました。</b>手打ちが面倒なときは、定番の質問をプルダウンから選んだり、写真を送るだけでも鑑定できます。</div>", unsafe_allow_html=True)
+    st.markdown("<div class='info-box'>🔒 ここは<b>あなただけのプライベート相談室</b>。占いはもちろん、悩みや人生のことまで何でも相談できます。会話の内容はスプレッドシートに保存されず、他の人には見えません。（ラッキーナンバーだけは今まで通りシートに記入できます）</div>", unsafe_allow_html=True)
 
     if not api_key:
         st.error("占い機能を利用するにはAPIキーの設定が必要です。")
     else:
+        # 🔒 プライバシーロック：合言葉を知っている人だけが入れる
+        fortune_passcode = st.secrets.get("FORTUNE_PASSCODE", "")
+        if fortune_passcode and not st.session_state.get("fortune_unlocked", False):
+            st.markdown("<div class='info-box'>🔒 この相談室はロックされています。合言葉を入力してください。</div>", unsafe_allow_html=True)
+            with st.form("fortune_lock_form"):
+                code_in = st.text_input("合言葉（パスコード）", type="password")
+                if st.form_submit_button("🔓 解錠する"):
+                    if code_in == fortune_passcode:
+                        st.session_state.fortune_unlocked = True
+                        st.rerun()
+                    else:
+                        st.error("合言葉が違います。")
+            st.stop()
+        if not fortune_passcode:
+            st.info("🔓 プライバシー保護を有効にするには、Streamlitの Secrets に  FORTUNE_PASSCODE = \"好きな合言葉\"  を追加してください。設定すると、合言葉を知っている人だけが入れる『あなた専用の相談室』になります。")
+        else:
+            if st.button("🔒 退出してロックする（スマホを手放す前に）"):
+                st.session_state.fortune_unlocked = False
+                st.rerun()
+
         if "fortune_messages" not in st.session_state:
             st.session_state.fortune_messages = [
                 {"role": "assistant", "content": "ようこそ、神秘の部屋へ。✨\n私は世界中のあらゆる占術をマスターし、「視覚」も持った占い師であり、あなたの人生にそっと寄り添う伴走者です。\n\n運勢や相性はもちろん、「自分が生まれてきた意味」「家族の本当の幸せ」「これから進むべき道」など、心の奥にある問いも、どうか遠慮なく言葉にしてください。\n\n下のメニューから選んでも、自由に話しかけてくださっても大丈夫です。今日は何をお話ししましょうか。"}
