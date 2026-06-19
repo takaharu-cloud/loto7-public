@@ -9,6 +9,7 @@ import os
 import hashlib
 import base64
 import io
+import time
 from collections import Counter
 from datetime import datetime, timedelta, date, timezone
 import anthropic
@@ -830,6 +831,117 @@ def get_ai_intuition_numbers(feeling, weather, gravity, target_date):
         if n not in seen: seen.append(n)
     return seen[:3] if len(seen) >= 3 else random.sample(range(1, LOTO_MAX_NUM + 1), 3)
 
+# 🚀 【進化8】結果取得（UTF-8固定＋リトライ。文字化けで0件＝更新されない不具合を解消）
+def fetch_loto7_results_ohtashp(existing_rounds):
+    """ohtashp.comからロト7結果を取得。戻り値: (new_data行リスト, 取得成功フラグ)。
+    取得成功フラグ=Trueは『サイトから表を解析できた』意味（新規が無くてもTrue）。"""
+    cols_tail = ["", "", "", "", "", "", ""]  # 六曜/干支/風水/吉凶日/月齢/潮回り/重力 のうち月齢以降を埋める
+    for attempt in range(4):
+        try:
+            res = requests.get(
+                "https://www.ohtashp.com/topics/takarakuji/loto7/",
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=20,
+            )
+            # ★HTTPヘッダに文字コードが無く ISO-8859-1 と誤認されるため、UTF-8で直接デコード
+            soup = BeautifulSoup(res.content.decode("utf-8", errors="replace"), "html.parser")
+            parsed = []
+            for row in soup.find_all("tr"):
+                th = row.find("th")
+                if not th or "第" not in th.get_text():
+                    continue
+                tds = row.find_all("td")
+                hon_tds = row.find_all("td", class_=lambda c: c and "hon" in c)
+                if len(tds) < 10 or len(hon_tds) != LOTO_PICK_COUNT:
+                    continue
+                parsed.append((th.get_text(strip=True), tds[0].get_text(strip=True),
+                               [td.get_text(strip=True) for td in hon_tds]))
+            if parsed:
+                new_data = []
+                for draw_num, date_str, hon_nums in parsed:
+                    if draw_num in existing_rounds:
+                        continue
+                    d_nums = re.findall(r'\d+', date_str)
+                    if len(d_nums) >= 3:
+                        dd = date(int(d_nums[0]), int(d_nums[1]), int(d_nums[2]))
+                        m_phase, m_tide, m_gravity = get_moon_and_tide(dd.year, dd.month, dd.day)
+                    else:
+                        m_phase, m_tide, m_gravity = "", "", ""
+                    new_data.append([draw_num, date_str] + hon_nums + ["", "", "", "", m_phase, m_tide, m_gravity])
+                return new_data, True
+        except Exception:
+            pass
+        time.sleep(1)
+    return [], False
+
+def fetch_latest_loto7_via_web(existing_rounds):
+    """ohtashpが不調なときのフォールバック：Claudeのウェブ検索で最新結果を取得。戻り値: (new_data, エラー)。"""
+    client = get_claude_client()
+    if client is None:
+        return [], "Claudeのキー（ANTHROPIC_API_KEY）が未設定です。"
+    tools = [
+        {"type": "web_search_20260209", "name": "web_search"},
+        {"type": "web_fetch_20260209", "name": "web_fetch"},
+    ]
+    prompt = f"""ロト7の最新の当選結果を、みずほ銀行など公式・信頼できる情報源でウェブ検索して確認してください。
+直近3回分について、回号・抽せん日・本数字7個（ボーナス数字は除く）を返します。
+必ず複数のソースで一致を確認した正確な値だけを採用し、確信が持てない回は含めないこと。本数字は1〜37の7個です。
+
+最後に、必ず次のJSONだけを ```json コードブロックで出力してください:
+```json
+[{{"round": "第683回", "date": "2026-06-26", "numbers": [1, 5, 12, 19, 24, 30, 37]}}]
+```"""
+    messages = [{"role": "user", "content": prompt}]
+    text = ""
+    try:
+        for _ in range(4):
+            r = client.messages.create(model=MODEL_MAIN, max_tokens=2000, tools=tools, messages=messages)
+            if r.stop_reason == "pause_turn":
+                messages.append({"role": "assistant", "content": r.content})
+                continue
+            text = "".join(b.text for b in r.content if b.type == "text")
+            break
+    except Exception as e:
+        return [], f"ウェブ検索に失敗しました: {e}"
+
+    m = re.search(r'```json\s*(.+?)\s*```', text, re.DOTALL)
+    raw = m.group(1) if m else (re.search(r'\[.*\]', text, re.DOTALL).group(0) if re.search(r'\[.*\]', text, re.DOTALL) else "")
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return [], "ウェブ検索の結果を解析できませんでした。"
+    if not isinstance(data, list):
+        return [], "ウェブ検索の結果形式が想定と異なりました。"
+
+    new_data = []
+    for it in data:
+        if not isinstance(it, dict):
+            continue
+        rd = str(it.get("round", "")).strip()
+        if not rd or rd in existing_rounds:
+            continue
+        nums = []
+        for n in it.get("numbers", []):
+            try:
+                v = int(n)
+            except Exception:
+                continue
+            if 1 <= v <= LOTO_MAX_NUM:
+                nums.append(v)
+        if len(nums) != LOTO_PICK_COUNT:
+            continue
+        date_str = str(it.get("date", "")).strip()
+        d_nums = re.findall(r'\d+', date_str)
+        if len(d_nums) >= 3:
+            try:
+                dd = date(int(d_nums[0]), int(d_nums[1]), int(d_nums[2]))
+                m_phase, m_tide, m_gravity = get_moon_and_tide(dd.year, dd.month, dd.day)
+            except Exception:
+                m_phase, m_tide, m_gravity = "", "", ""
+        else:
+            m_phase, m_tide, m_gravity = "", "", ""
+        new_data.append([rd, date_str] + [str(n) for n in nums] + ["", "", "", "", m_phase, m_tide, m_gravity])
+    return new_data, None
+
 # ==========================================
 # 5. メインUIレンダリング（天才科学者の管制室）
 # ==========================================
@@ -863,43 +975,41 @@ if st.session_state.menu == "ホーム":
 
 elif st.session_state.menu == "最新データ取得":
     st.title("📡 最新データ取得")
+    st.caption("結果の取得元：ohtashp.com（公式みずほは自動取得をブロックするため）。取得できない時はClaudeのウェブ検索で自動補完します。")
     if st.button("データ同期および自動採点を実行する"):
-        with st.spinner("通信中...公式サイトのデータを解析し、予想と照合しています..."):
+        with st.spinner("通信中...最新の当選結果を解析し、予想と照合しています..."):
             try:
                 df_real = load_sheet("実データ")
                 existing_rounds = df_real["回号"].astype(str).tolist() if not df_real.empty and "回号" in df_real.columns else []
-                res = requests.get("https://www.ohtashp.com/topics/takarakuji/loto7/", headers={"User-Agent": "Mozilla/5.0"})
-                res.encoding = res.apparent_encoding
-                soup = BeautifulSoup(res.text, "html.parser")
-                new_data = []
-                for row in soup.find_all("tr"):
-                    th = row.find("th")
-                    if not th or "第" not in th.text: continue
-                    draw_num = th.text.strip()
-                    if draw_num in existing_rounds: continue 
-                    tds = row.find_all("td")
-                    if len(tds) < 10: continue
-                    date_str = tds[0].text.strip()
-                    d_nums = re.findall(r'\d+', date_str)
-                    if len(d_nums) >= 3:
-                        draw_date = date(int(d_nums[0]), int(d_nums[1]), int(d_nums[2]))
-                        m_phase, m_tide, m_gravity = get_moon_and_tide(draw_date.year, draw_date.month, draw_date.day)
-                    else:
-                        m_phase, m_tide, m_gravity = "", "", ""
-                    hon_tds = row.find_all("td", class_=lambda c: c and "hon" in c)
-                    if len(hon_tds) == LOTO_PICK_COUNT:
-                        hon_nums = [td.text.strip() for td in hon_tds]
-                        new_data.append([draw_num, date_str] + hon_nums + ["", "", "", "", m_phase, m_tide, m_gravity])
+
+                # ① まず ohtashp.com（UTF-8固定＋リトライ。文字化けで0件→更新されない不具合を解消）
+                new_data, site_ok = fetch_loto7_results_ohtashp(existing_rounds)
+                source = "ohtashp.com"
+
+                # ② サイトが不調（表を1件も解析できない）なら、Claudeのウェブ検索で補完
+                if not site_ok:
+                    web_data, web_err = fetch_latest_loto7_via_web(existing_rounds)
+                    if web_data:
+                        new_data, source = web_data, "ウェブ検索（Claude）"
+                    elif web_err:
+                        st.caption(f"（ウェブ検索フォールバック: {web_err}）")
+
                 if new_data:
                     cols = ["回号", "抽せん日"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["六曜", "干支", "風水", "吉凶日", "月齢", "潮回り", "重力状態"]
                     df_new = pd.DataFrame(new_data, columns=cols)
                     df_combined = pd.concat([df_new, df_real], ignore_index=True) if not df_real.empty else df_new
                     save_sheet("実データ", df_combined)
                     auto_check_hits(load_sheet("予測ノート"), df_combined)
-                    st.success("最新結果の取得と、全予想の自動採点（等級判定）が完了しました！")
-                else: 
+                    st.success(f"最新結果（取得元: {source}）を {len(new_data)} 件取り込み、全予想を自動採点しました！")
+                    st.dataframe(df_new[["回号", "抽せん日"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)]])
+                    if source.startswith("ウェブ"):
+                        st.caption("※ウェブ検索で取得した番号です。念のためみずほ銀行の公式発表と照合してください。")
+                elif site_ok:
                     auto_check_hits(load_sheet("予測ノート"), df_real)
-                    st.info("データベースは既に最新です。既存の予測ノートの再採点を行いました。")
+                    st.info("データベースは既に最新です。既存の予測ノートを再採点しました。")
+                else:
+                    auto_check_hits(load_sheet("予測ノート"), df_real)
+                    st.warning("結果の取得元が一時的に不安定で、新しい結果を取得できませんでした。数分おいて再実行してください（既存の予測ノートは再採点しました）。")
             except Exception as e:
                 st.error(f"データの同期・解析中にエラーが発生しました: {e}")
 
