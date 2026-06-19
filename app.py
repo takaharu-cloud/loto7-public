@@ -629,6 +629,68 @@ def lens_auspicious_day(draw_date):
         pass
     return labels, bool(labels)
 
+# 🚀 【進化12】予想サイトの成績追跡（当たっているサイトを見つけ、精度で重み付けして反映）
+def log_site_predictions(df_collected, target_round):
+    """各サイトの予想を永続ログ『予想成績ログ』に追記（同じ回号＋同ソースは置き換え）。採点用に消さず残す。"""
+    if df_collected is None or df_collected.empty:
+        return
+    col = "予想数字" if "予想数字" in df_collected.columns else None
+    src_col = "ソース" if "ソース" in df_collected.columns else ("サイトURL" if "サイトURL" in df_collected.columns else None)
+    if not col or not src_col:
+        return
+    today = datetime.now(JST).strftime("%Y-%m-%d")
+    df_log = load_sheet("予想成績ログ")
+    existing = df_log.to_dict("records") if not df_log.empty else []
+    incoming = {str(r.get(src_col, "")) for _, r in df_collected.iterrows()}
+    kept = [r for r in existing if not (str(r.get("対象回号", "")) == str(target_round) and str(r.get("ソース", "")) in incoming)]
+    for _, r in df_collected.iterrows():
+        nums = ", ".join(str(int(x)) for x in re.findall(r'\d+', str(r.get(col, ""))) if 1 <= int(x) <= LOTO_MAX_NUM)
+        if not nums:
+            continue
+        kept.append({"対象回号": str(target_round), "ソース": str(r.get(src_col, ""))[:60], "予想数字": nums, "取得日": today})
+    save_sheet("予想成績ログ", pd.DataFrame(kept, columns=["対象回号", "ソース", "予想数字", "取得日"]))
+
+def compute_site_leaderboard(df_real):
+    """予想成績ログを実データで採点し、サイト別の平均的中でランキング。戻り値: dictのリスト（降順）。"""
+    df_log = load_sheet("予想成績ログ")
+    if df_log.empty or "ソース" not in df_log.columns:
+        return []
+    stats = {}
+    for _, r in df_log.iterrows():
+        actual = actual_numbers_for_round(df_real, str(r.get("対象回号", "")))
+        if not actual:
+            continue  # 抽選前 or 結果未取得
+        pred = set(int(x) for x in re.findall(r'\d+', str(r.get("予想数字", ""))) if 1 <= int(x) <= LOTO_MAX_NUM)
+        if not pred:
+            continue
+        stats.setdefault(str(r.get("ソース", "")), []).append(len(pred & actual))
+    board = []
+    for src, hits in stats.items():
+        if hits:
+            board.append({"ソース": src, "採点回数": len(hits), "平均的中": round(sum(hits) / len(hits), 2), "最高的中": max(hits), "直近的中": hits[-1]})
+    board.sort(key=lambda x: (x["平均的中"], x["採点回数"]), reverse=True)
+    return board
+
+def get_trusted_site_numbers(df_real, target_round, top_k=3, min_rounds=2):
+    """成績上位サイトが今回(target_round)に予想している数字を、精度で重み付けして返す。戻り値: {num: weight}。"""
+    board = compute_site_leaderboard(df_real)
+    trusted = [b for b in board if b["採点回数"] >= min_rounds and b["平均的中"] > 0][:top_k]
+    if not trusted:
+        return {}
+    df_log = load_sheet("予想成績ログ")
+    if df_log.empty:
+        return {}
+    weights = {}
+    for b in trusted:
+        sub = df_log[(df_log["ソース"].astype(str) == b["ソース"]) & (df_log["対象回号"].astype(str) == str(target_round))]
+        if sub.empty:
+            continue
+        for x in re.findall(r'\d+', str(sub.iloc[0].get("予想数字", ""))):
+            v = int(x)
+            if 1 <= v <= LOTO_MAX_NUM:
+                weights[v] = weights.get(v, 0) + b["平均的中"]
+    return weights
+
 # 🚀 【進化2】固定バイアスを破壊する「動的量子シード」生成関数
 def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, good_deed):
     """
@@ -1287,25 +1349,47 @@ elif st.session_state.menu == "最新データ取得":
             st.dataframe(df_full[[c for c in show_cols if c in df_full.columns]].head(20))
 
     st.markdown("---")
-    st.markdown("### 🌐 他サイト予想の全自動収集＆横断分析（URL登録不要）")
-    st.markdown("<div class='info-box'>URLを登録する必要はありません。<b>Claudeがウェブを自動で検索し、ロト7の予想サイト・ブログ・YouTubeをできるだけ多く探し出して</b>、各ソースの予想数字を抽出し『他サイト予想』シートを丸ごと更新します。そのうえで、<b>「どの数字が人気で何位か」「あなたの予想との違い」「（抽選後）どのサイトが正解に一番近かったか」</b>まで分析します。<br>※YouTubeはタイトル・概要・コメントの文字から読める数字のみ対象（動画内の音声は読めません）。</div>", unsafe_allow_html=True)
+    st.markdown("### 🏅 他サイト予想：収集・成績ランキング・自動反映（API節約）")
+    st.markdown("<div class='info-box'>各サイトの予想を<b>成績ログ</b>に蓄積し、抽選後に採点して<b>『どこが当たっているか』のランキング</b>を作ります。成績上位サイトの予想は、積み上げ時に<b>精度に応じて自動で重み付け反映</b>されます。<br>・<b>節約モード（推奨）</b>：スプレッドシートの『予想サイトURL』シート（A1=URL, A2〜に常連サイトURL）を直接取得＋Haikuで抽出（最安）。<br>・<b>発掘モード</b>：Claudeのウェブ検索で新しいサイトを探す（コスト高め・たまに使う）。</div>", unsafe_allow_html=True)
     df_real0 = load_sheet("実データ")
     next_round, _ = get_next_round_info(df_real0)
     rounds_for_search = [f"第{next_round + i}回" for i in range(-3, 3)]
     target_round_label = st.selectbox("どの回号の予想を集めますか？", rounds_for_search, index=rounds_for_search.index(f"第{next_round}回") if f"第{next_round}回" in rounds_for_search else 0)
 
-    ccol1, ccol2 = st.columns(2)
-    if ccol1.button("🌐 ウェブを全自動検索して予想を収集する", use_container_width=True):
-        with st.spinner("Claudeがウェブを検索し、予想サイト・YouTubeを横断収集しています（30秒〜1分かかります）..."):
+    ccol1, ccol2, ccol3 = st.columns(3)
+    if ccol1.button("📋 節約モードで収集", use_container_width=True):
+        with st.spinner("登録サイトを直接巡回し、予想数字を抽出しています（Haiku・低コスト）..."):
+            df_collected, err = collect_other_site_predictions()
+        if err:
+            st.warning(err)
+        else:
+            log_site_predictions(df_collected, target_round_label)
+            st.success(f"{len(df_collected)}件を収集し、成績ログに記録しました（{target_round_label}）。")
+            st.dataframe(df_collected)
+            render_other_site_analysis(df_collected, target_round_label)
+
+    if ccol2.button("🌐 発掘モード（検索）", use_container_width=True):
+        with st.spinner("Claudeがウェブを検索し、予想サイト・YouTubeを横断収集しています（30秒〜1分）..."):
             df_collected, err = research_predictions_via_web(target_round_label)
         if err:
             st.warning(err)
         else:
-            st.success(f"{len(df_collected)}件のソースから予想を収集し、『他サイト予想』を更新しました。")
+            log_site_predictions(df_collected, target_round_label)
+            st.success(f"{len(df_collected)}件のソースから収集し、成績ログにも記録しました（{target_round_label}）。")
             st.dataframe(df_collected)
             render_other_site_analysis(df_collected, target_round_label)
 
-    if ccol2.button("📊 収集済みデータで横断分析する", use_container_width=True):
+    if ccol3.button("🏅 成績ランキング", use_container_width=True):
+        board = compute_site_leaderboard(load_sheet("実データ"))
+        if not board:
+            st.info("まだ採点できる履歴がありません。『収集』→ 抽選後に『最新データ取得（採点）』を重ねると、当たっているサイトが分かってきます。")
+        else:
+            st.markdown("#### 🏅 予想サイト成績ランキング（平均的中・採点回数）")
+            st.dataframe(pd.DataFrame(board))
+            top = board[0]
+            st.success(f"現在の最有力：「{top['ソース']}」＝平均 {top['平均的中']} 個的中（{top['採点回数']}回採点）。積み上げ時、上位サイトの予想を精度に応じて自動反映します。")
+
+    if st.button("📊 収集済みデータで横断分析する"):
         render_other_site_analysis(load_sheet("他サイト予想"), target_round_label)
 
 elif st.session_state.menu == "日々の予想・積上げ":
@@ -1377,6 +1461,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     carry_nums, slide_nums = lens_carry_slide(df_real)
                     unpop_nums = lens_unpopular_numbers()
                     ausp_labels, ausp_good = lens_auspicious_day(draw_date)
+                    # 成績上位サイトの予想を、精度に応じて反映
+                    trusted_site_w = get_trusted_site_numbers(df_real, target_round_str)
 
                     st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
                     st.markdown("### 🔭 全方位レポート（観点＝レンズ別）")
@@ -1397,6 +1483,9 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     st.write(f"👥 **【人間の欲】** 買われにくい高数字 {unpop_nums} を僅かに優遇（当たった時の分け前を増やす狙い）")
                     if ausp_labels:
                         st.write(f"🗓 **【縁起日】** {' ・ '.join(ausp_labels)} ＝ 縁起の良い日。直感を後押し")
+                    if trusted_site_w:
+                        top_site_nums = sorted(trusted_site_w, key=lambda k: trusted_site_w[k], reverse=True)[:10]
+                        st.write(f"🏅 **【成績上位サイトの予想（精度で重み付け反映）】**: {sorted(top_site_nums)}")
                     st.markdown("</div>", unsafe_allow_html=True)
 
                     # 外部トレンド読み込み（スプレッドシート連動対応）
@@ -1441,6 +1530,9 @@ elif st.session_state.menu == "日々の予想・積上げ":
 
                         # 理論10：縁起日ブースト（縁起の良い日は直感ナンバーを後押し）
                         if ausp_good and n in ai_intuition_nums: base_w += 8
+
+                        # 理論11：成績上位サイトの予想を、その平均的中（精度）に応じて反映
+                        if n in trusted_site_w: base_w += int(trusted_site_w[n] * 5)
 
                         base_weights.append(max(1, base_w))
 
