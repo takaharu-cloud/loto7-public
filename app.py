@@ -27,7 +27,7 @@ SIMULATION_LOOP_COUNT = 50000   # シミュレーションのループ回数
 # ==========================================
 # 0. ページ基本設定 & 最強CSS（スマホ無敵化・手打ち完全排除）
 # ==========================================
-st.set_page_config(page_title="ロト7 10億捕捉 予知科学管制システム", layout="wide")
+st.set_page_config(page_title="ロト7 10億捕捉 予知科学管制システム", page_icon="icon.png", layout="wide")
 
 st.markdown("""
 <style>
