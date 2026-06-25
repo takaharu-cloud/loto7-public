@@ -2065,6 +2065,10 @@ elif st.session_state.menu == "最終予測決定":
         min_value=0, max_value=int(buy_count), value=int(min(_default_ooana, buy_count)), step=1,
         help="例：20口で『4』にすると、大穴4口＋バランス16口。『0』にすると大穴の強制確保なし。大穴＝みんなが買わない高い数字(32〜37)が多い口で、当たれば分け前が大きい狙いです。",
     )
+    use_latest_stack = st.checkbox(
+        "🆕 最新の積み上げだけで決定する（古い積み上げを除外＝偏り防止・推奨）", value=True,
+        help="各実行者の“最新の積み上げ日”の口だけで決定します。偏り対策を入れる前の古い口（特定数字に固定されがち）を自動で除外。記録は消えません（『データを見る』には残ります）。古い分まで全部使いたい時だけOFFに。",
+    )
 
     # AIへの指示は『完全自律』に固定（5択の選択は廃止）。口数を選んでボタンを押すだけ。
     user_instruction = "【完全自律】最強の予知科学者として、全次元のデータを統合し最適な10億捕捉陣形を構築せよ"
@@ -2078,6 +2082,17 @@ elif st.session_state.menu == "最終予測決定":
                     df_target = df_note[df_note["対象回号"] == t_round_decide_str]
                     if df_target.empty: st.warning(f"指定された回号（{t_round_decide_str}）の予測積み上げデータがありません。先に「日々の予測・積上げ」を実行してください。")
                     else:
+                        # 🆕 最新の積み上げだけを使う（実行者ごとに最新の実行日のみ）＝古い偏った口を除外
+                        if use_latest_stack and "実行者" in df_target.columns and "実行日" in df_target.columns:
+                            keep_idx = []
+                            for _op, _g in df_target.groupby("実行者"):
+                                _md = _g["実行日"].astype(str).max()
+                                keep_idx += _g[_g["実行日"].astype(str) == _md].index.tolist()
+                            if keep_idx:
+                                _excluded = len(df_target) - len(keep_idx)
+                                df_target = df_target.loc[keep_idx]
+                                if _excluded > 0:
+                                    st.caption(f"🆕 最新の積み上げ {len(df_target)}口で決定（古い {_excluded}口は除外。記録は『データを見る』に残っています）。")
                         target_list = df_target.to_dict('records')
                         
                         # ===== 多角的スコアリング（過去頻度の土台＋気持ち＋大穴ブースト）=====
@@ -2121,7 +2136,7 @@ elif st.session_state.menu == "最終予測決定":
                         ooana_count = [0]  # 大穴の採用数（_try_add内で更新するためリストで保持）
                         limit_dupe_start = max(2, int(buy_count / 5))
                         limit_dupe_end = max(2, int(buy_count / 5))
-                        usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 3)  # 各数字の出現上限（偏り防止）
+                        usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 2)  # 各数字の出現上限（偏り防止・均等+2程度）
                         cap_ladder = [usage_cap, usage_cap + 3, usage_cap + 6, 999]
 
                         def _try_add(c, cap):
