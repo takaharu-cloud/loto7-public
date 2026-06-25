@@ -150,10 +150,13 @@ def save_sheet(sheet_name, df):
             worksheet = doc.worksheet(sheet_name)
         except Exception: 
             worksheet = doc.add_worksheet(title=sheet_name, rows="1000", cols="45")
+        # 安全装置：空データで既存の記録を全消ししない（通信失敗・誤操作からの全データ消失を防ぐ）
+        if df is None or df.empty:
+            st.warning(f"シート「{sheet_name}」へ空のデータを書き込もうとしたため、既存の記録を守るために保存を中止しました。")
+            return False
+        df = df.fillna("").astype(str).replace("nan", "")
         worksheet.clear()
-        if not df.empty:
-            df = df.fillna("").astype(str).replace("nan", "")
-            worksheet.update(values=[df.columns.values.tolist()] + df.values.tolist(), range_name="A1")
+        worksheet.update(values=[df.columns.values.tolist()] + df.values.tolist(), range_name="A1")
         return True
     except Exception as e: 
         st.error(f"シート「{sheet_name}」へのデータ保存に失敗しました: {e}")
@@ -1955,10 +1958,12 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         new_data.append(row_data)
                     
                     df_note = load_sheet("予測ノート")
-                    if not df_note.empty and "対象回号" in df_note.columns:
-                        mask = (df_note["対象回号"] == target_round_str) & (df_note["実行日"] == today_str) & (df_note["実行者"] == operator)
-                        df_note = df_note[~mask]
-                    df_note = pd.concat([df_note, pd.DataFrame(new_data)], ignore_index=True) if not df_note.empty else pd.DataFrame(new_data)
+                    new_df = pd.DataFrame(new_data)
+                    # 過去の記録は消さずに“追記”する（上書き防止）。完全に同一の行だけ重複排除。
+                    if not df_note.empty:
+                        df_note = pd.concat([df_note, new_df], ignore_index=True).drop_duplicates().reset_index(drop=True)
+                    else:
+                        df_note = new_df
                     save_sheet("予測ノート", df_note)
                     st.success(f"固定バイアスを完全排除し、動的量子シードと物理演算を駆使して、{target_round_str}に向けて最強の{len(top30)}口を積み上げました。（担当: {operator}）")
 
@@ -1990,9 +1995,15 @@ elif st.session_state.menu == "最終予測決定":
     if not _co_round.empty and "キャリーオーバー" in _co_round.columns:
         auto_co = _co_round["キャリーオーバー"].astype(str).str.contains("YES").any()
     decide_carryover = st.checkbox(
-        "💰 今回はキャリーオーバー週として『大穴（人気回避・高数字32〜37）』を厚く狙う",
+        "💰 今回はキャリーオーバー週（AIに『分け前最大化』を意識させる）",
         value=bool(auto_co),
-        help="ONにすると、最終決定で大穴の口（人気回避レンズ／32〜37を多く含む口）を一定数“必ず確保”し、点数も底上げします。積み上げ時に💰をONにしていれば自動でONになります。分け前最大化が狙い（当選確率自体は変わりません）。",
+        help="繰越の大きい週にON。積み上げ時に💰をONにしていれば自動でON。AIの講評が大穴重視の語り口になります。大穴を“何口入れるか”は下の数で決めます（当選確率自体は変わりません）。",
+    )
+    _default_ooana = 6 if decide_carryover else 4
+    ooana_target = st.number_input(
+        "そのうち『大穴（人気回避・高数字32〜37）』を何口入れる？（残りは2〜4等も狙えるようバランス重視）",
+        min_value=0, max_value=int(buy_count), value=int(min(_default_ooana, buy_count)), step=1,
+        help="例：20口で『4』にすると、大穴4口＋バランス16口。『0』にすると大穴の強制確保なし。大穴＝みんなが買わない高い数字(32〜37)が多い口で、当たれば分け前が大きい狙いです。",
     )
 
     # AIへの指示は『完全自律』に固定（5択の選択は廃止）。口数を選んでボタンを押すだけ。
@@ -2034,18 +2045,20 @@ elif st.session_state.menu == "最終予測決定":
                             # 気持ち（祈り/夢）の後押し
                             if any(k in str(c.get('祈り/夢','')) for k in ["平和", "笑顔", "自由", "住宅", "結婚式", "感謝"]): pts += 50
 
-                            # 大穴ブースト（人気回避・高数字）。キャリーオーバー週は特に厚く。
+                            # 大穴ブースト（過去頻度の逆風を打ち消す程度。口数は下の上限で制御するので控えめ）
                             high_cnt = sum(1 for n in _nums_of(c) if n in unpop_set)
                             if _is_ooana(c):
-                                pts += (160 if decide_carryover else 45) + high_cnt * (12 if decide_carryover else 4)
+                                pts += (70 if decide_carryover else 40) + high_cnt * 4
 
                             c['sort_pts'] = pts + random.randint(0, 50)
 
                         target_list.sort(key=lambda x: x['sort_pts'], reverse=True)
 
-                        # ===== 選定：①大穴クォータ(CO時) ②レンズ網羅 ③点数で充足 =====
+                        # ===== 選定：①大穴を“ちょうど目標数”だけ確保 ②レンズ網羅 ③点数で充足 =====
+                        # 大穴は ooana_target 口で打ち止め＝全体が大穴に偏らない（2〜4等も狙える）。
                         final_picks = []
                         used_start_nums, used_end_nums, num_usage, chosen_keys = [], [], Counter(), set()
+                        ooana_count = [0]  # 大穴の採用数（_try_add内で更新するためリストで保持）
                         limit_dupe_start = max(2, int(buy_count / 5))
                         limit_dupe_end = max(2, int(buy_count / 5))
                         usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 3)  # 各数字の出現上限（偏り防止）
@@ -2055,6 +2068,8 @@ elif st.session_state.menu == "最終予測決定":
                             if len(final_picks) >= buy_count: return False
                             key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
                             if key in chosen_keys: return False
+                            oo = _is_ooana(c)
+                            if oo and ooana_count[0] >= ooana_target: return False  # 大穴は目標数で打ち止め
                             s = c.get('数字1'); e = c.get(f'数字{LOTO_PICK_COUNT}')
                             if used_start_nums.count(s) >= limit_dupe_start: return False
                             if used_end_nums.count(e) >= limit_dupe_end: return False
@@ -2064,17 +2079,16 @@ elif st.session_state.menu == "最終予測決定":
                             final_picks.append(c); chosen_keys.add(key)
                             used_start_nums.append(s); used_end_nums.append(e)
                             for n in nums: num_usage[n] += 1
+                            if oo: ooana_count[0] += 1
                             return True
 
-                        # ① キャリーオーバー時：大穴を一定数“必ず確保”（分け前最大化）
-                        if decide_carryover:
-                            ooana_quota = max(1, round(buy_count * 0.4))
-                            added = 0
+                        # ① 大穴を目標数だけ先に確保（点数の高い大穴から）
+                        if ooana_target > 0:
                             for cap in cap_ladder:
                                 for c in target_list:
-                                    if added >= ooana_quota or len(final_picks) >= buy_count: break
-                                    if _is_ooana(c) and _try_add(c, cap): added += 1
-                                if added >= ooana_quota or len(final_picks) >= buy_count: break
+                                    if ooana_count[0] >= ooana_target or len(final_picks) >= buy_count: break
+                                    if _is_ooana(c): _try_add(c, cap)
+                                if ooana_count[0] >= ooana_target or len(final_picks) >= buy_count: break
 
                         # ② レンズ網羅：できるだけ多くの“観点（予測ロジック）”を1口ずつ取り込む
                         seen_lens = set(str(c.get('予測ロジック','')) for c in final_picks)
@@ -2086,19 +2100,22 @@ elif st.session_state.menu == "最終予測決定":
                                 if _try_add(c, cap): seen_lens.add(lg)
                             if len(final_picks) >= buy_count: break
 
-                        # ③ 残りは点数の高い順で充足（土台＝過去頻度を活かす）
+                        # ③ 残りは点数の高い順で充足（土台＝過去頻度を活かす。大穴は目標数で止まる）
                         for cap in cap_ladder:
                             for c in target_list:
                                 if len(final_picks) >= buy_count: break
                                 _try_add(c, cap)
                             if len(final_picks) >= buy_count: break
 
-                        # ④ それでも足りなければ制約を外して充足
+                        # ④ それでも足りなければ制約を外して充足（大穴以外を優先して埋める）
                         if len(final_picks) < buy_count:
-                            for c in target_list:
-                                key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
-                                if key in chosen_keys: continue
-                                final_picks.append(c); chosen_keys.add(key)
+                            for prefer_non_ooana in (True, False):
+                                for c in target_list:
+                                    if len(final_picks) >= buy_count: break
+                                    key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
+                                    if key in chosen_keys: continue
+                                    if prefer_non_ooana and _is_ooana(c): continue
+                                    final_picks.append(c); chosen_keys.add(key)
                                 if len(final_picks) >= buy_count: break
 
                         # 偏りチェック＆“何の要素が入ったか”を表示
