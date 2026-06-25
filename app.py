@@ -1948,7 +1948,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
                             "実行者": operator, "口数": f"{i}口目",
                             "実績点数": int(item["base_pts"]), "社会情勢": soc_sensor[:15], "霊的要素": spirit_sensor[:15], "AI直感": str(ai_intuition_nums),
                             "徳積み": good_deed[:15], "祈り/夢": prayer, "地球環境": f"{m_phase}/引力{m_gravity}",
-                            "予測ロジック": item["type"], "AIの助言": "未照合"
+                            "予測ロジック": item["type"], "キャリーオーバー": ("YES" if carryover else ""), "AIの助言": "未照合"
                         }
                         for j in range(LOTO_PICK_COUNT):
                             row_data[f"数字{j+1}"] = str(item["nums"][j]).zfill(2)
@@ -1984,6 +1984,17 @@ elif st.session_state.menu == "最終予測決定":
     buy_count = c2.radio("購入口数を選択", [10, 20, 30], index=1, horizontal=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # 💰 キャリーオーバー検出：積み上げ時に💰をONにしていれば自動でON。手動でも切替可。
+    _co_round = df_note[df_note["対象回号"] == t_round_decide_str] if (not df_note.empty and "対象回号" in df_note.columns) else pd.DataFrame()
+    auto_co = False
+    if not _co_round.empty and "キャリーオーバー" in _co_round.columns:
+        auto_co = _co_round["キャリーオーバー"].astype(str).str.contains("YES").any()
+    decide_carryover = st.checkbox(
+        "💰 今回はキャリーオーバー週として『大穴（人気回避・高数字32〜37）』を厚く狙う",
+        value=bool(auto_co),
+        help="ONにすると、最終決定で大穴の口（人気回避レンズ／32〜37を多く含む口）を一定数“必ず確保”し、点数も底上げします。積み上げ時に💰をONにしていれば自動でONになります。分け前最大化が狙い（当選確率自体は変わりません）。",
+    )
+
     # AIへの指示は『完全自律』に固定（5択の選択は廃止）。口数を選んでボタンを押すだけ。
     user_instruction = "【完全自律】最強の予知科学者として、全次元のデータを統合し最適な10億捕捉陣形を構築せよ"
 
@@ -1998,54 +2009,91 @@ elif st.session_state.menu == "最終予測決定":
                     else:
                         target_list = df_target.to_dict('records')
                         
-                        # AI独自の多角的フィルタリング（選択された指示に応じてポイントを爆発的にブースト）
+                        # ===== 多角的スコアリング（過去頻度の土台＋気持ち＋大穴ブースト）=====
+                        # 大穴（人気回避＝高数字32〜37）は過去に出にくく実績点数が低い→そのままだと最終決定で必ず落ちる。
+                        # 大穴の点数を底上げして“逆風”を打ち消す。キャリーオーバー週は特に厚く。
+                        unpop_set = set(lens_unpopular_numbers())  # 32〜37
+
+                        def _nums_of(c):
+                            return [int(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(c.get(f"数字{i}")).isdigit()]
+
+                        def _is_ooana(c):
+                            high_cnt = sum(1 for n in _nums_of(c) if n in unpop_set)
+                            return ("人気回避" in str(c.get('予測ロジック',''))) or (high_cnt >= 3)
+
                         error_shown = False
                         for c in target_list:
-                            try: 
+                            try:
                                 pts = int(float(c.get('実績点数', 0)))
-                            except Exception as e: 
+                            except Exception as e:
                                 pts = 0
                                 if not error_shown:
                                     st.warning(f"実績点数の読み取りに失敗したため、0点として計算しました: {e}")
                                     error_shown = True
-                            
-                            if any(k in str(c.get('祈り/夢','')) for k in ["平和", "笑顔", "自由", "住宅", "結婚式"]): pts += 50
-                            
-                            if "社会波長" in user_instruction and any(k in str(c.get('社会情勢','')) for k in ["変化", "天下り", "混沌"]): pts += 100
-                            if "霊的波長" in user_instruction and any(k in str(c.get('霊的要素','')) for k in ["動物", "幽霊", "シンクロ"]): pts += 100
-                            if "物理法則" in user_instruction and "連番波及" in str(c.get('予測ロジック','')): pts += 100
-                            if "徳と祈り" in user_instruction and any(k in str(c.get('祈り/夢','')) for k in ["平和", "笑顔", "自由", "住宅", "結婚式", "感謝"]): pts += 100
-                            
-                            c['sort_pts'] = pts + random.randint(0, 50) 
-                            
-                        target_list.sort(key=lambda x: x['sort_pts'], reverse=True)
-                        
-                        def _nums_of(c):
-                            return [int(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(c.get(f"数字{i}")).isdigit()]
 
+                            # 気持ち（祈り/夢）の後押し
+                            if any(k in str(c.get('祈り/夢','')) for k in ["平和", "笑顔", "自由", "住宅", "結婚式", "感謝"]): pts += 50
+
+                            # 大穴ブースト（人気回避・高数字）。キャリーオーバー週は特に厚く。
+                            high_cnt = sum(1 for n in _nums_of(c) if n in unpop_set)
+                            if _is_ooana(c):
+                                pts += (160 if decide_carryover else 45) + high_cnt * (12 if decide_carryover else 4)
+
+                            c['sort_pts'] = pts + random.randint(0, 50)
+
+                        target_list.sort(key=lambda x: x['sort_pts'], reverse=True)
+
+                        # ===== 選定：①大穴クォータ(CO時) ②レンズ網羅 ③点数で充足 =====
                         final_picks = []
                         used_start_nums, used_end_nums, num_usage, chosen_keys = [], [], Counter(), set()
                         limit_dupe_start = max(2, int(buy_count / 5))
                         limit_dupe_end = max(2, int(buy_count / 5))
-                        # ★各数字の出現上限（偏り防止）。均等なら buy_count*7/37 個。少し余裕を持たせる
-                        usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 3)
+                        usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 3)  # 各数字の出現上限（偏り防止）
+                        cap_ladder = [usage_cap, usage_cap + 3, usage_cap + 6, 999]
 
-                        for cap in [usage_cap, usage_cap + 3, usage_cap + 6, 999]:
+                        def _try_add(c, cap):
+                            if len(final_picks) >= buy_count: return False
+                            key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
+                            if key in chosen_keys: return False
+                            s = c.get('数字1'); e = c.get(f'数字{LOTO_PICK_COUNT}')
+                            if used_start_nums.count(s) >= limit_dupe_start: return False
+                            if used_end_nums.count(e) >= limit_dupe_end: return False
+                            nums = _nums_of(c)
+                            if any(num_usage[n] >= cap for n in nums): return False
+                            if any(len(set(nums) & set(_nums_of(u))) >= 4 for u in final_picks): return False
+                            final_picks.append(c); chosen_keys.add(key)
+                            used_start_nums.append(s); used_end_nums.append(e)
+                            for n in nums: num_usage[n] += 1
+                            return True
+
+                        # ① キャリーオーバー時：大穴を一定数“必ず確保”（分け前最大化）
+                        if decide_carryover:
+                            ooana_quota = max(1, round(buy_count * 0.4))
+                            added = 0
+                            for cap in cap_ladder:
+                                for c in target_list:
+                                    if added >= ooana_quota or len(final_picks) >= buy_count: break
+                                    if _is_ooana(c) and _try_add(c, cap): added += 1
+                                if added >= ooana_quota or len(final_picks) >= buy_count: break
+
+                        # ② レンズ網羅：できるだけ多くの“観点（予測ロジック）”を1口ずつ取り込む
+                        seen_lens = set(str(c.get('予測ロジック','')) for c in final_picks)
+                        for cap in cap_ladder:
                             for c in target_list:
                                 if len(final_picks) >= buy_count: break
-                                key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
-                                if key in chosen_keys: continue
-                                s = c.get('数字1'); e = c.get(f'数字{LOTO_PICK_COUNT}')
-                                if used_start_nums.count(s) >= limit_dupe_start: continue
-                                if used_end_nums.count(e) >= limit_dupe_end: continue
-                                nums = _nums_of(c)
-                                if any(num_usage[n] >= cap for n in nums): continue
-                                if any(len(set(nums) & set(_nums_of(u))) >= 4 for u in final_picks): continue
-                                final_picks.append(c); chosen_keys.add(key)
-                                used_start_nums.append(s); used_end_nums.append(e)
-                                for n in nums: num_usage[n] += 1
+                                lg = str(c.get('予測ロジック',''))
+                                if lg in seen_lens: continue
+                                if _try_add(c, cap): seen_lens.add(lg)
                             if len(final_picks) >= buy_count: break
 
+                        # ③ 残りは点数の高い順で充足（土台＝過去頻度を活かす）
+                        for cap in cap_ladder:
+                            for c in target_list:
+                                if len(final_picks) >= buy_count: break
+                                _try_add(c, cap)
+                            if len(final_picks) >= buy_count: break
+
+                        # ④ それでも足りなければ制約を外して充足
                         if len(final_picks) < buy_count:
                             for c in target_list:
                                 key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
@@ -2053,19 +2101,23 @@ elif st.session_state.menu == "最終予測決定":
                                 final_picks.append(c); chosen_keys.add(key)
                                 if len(final_picks) >= buy_count: break
 
-                        # 偏りチェック（各数字が何口に入ったか）を表示
+                        # 偏りチェック＆“何の要素が入ったか”を表示
                         _bal = Counter(n for c in final_picks for n in _nums_of(c))
-                        st.caption("🔎 選んだ" + str(len(final_picks)) + "口の数字バランス（各数字が何口に出たか・上位）：" + ", ".join(f"{n}×{ct}" for n, ct in _bal.most_common(12)))
+                        _lens_bal = Counter(str(c.get('予測ロジック','?')) for c in final_picks)
+                        _ooana_n = sum(1 for c in final_picks if _is_ooana(c))
+                        st.caption("🔎 数字バランス（各数字が何口に出たか・上位）：" + ", ".join(f"{n}×{ct}" for n, ct in _bal.most_common(12)))
+                        st.caption(("💰 キャリーオーバー狙いON｜" if decide_carryover else "") + f"大穴の口：{_ooana_n}/{len(final_picks)}　｜　観点(レンズ)の内訳：" + ", ".join(f"{k}×{v}" for k, v in _lens_bal.most_common()))
 
-                        ai_prompt = "\n".join([f"[{r.get('実行者','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI予知:{r.get('AI直感','')}] " + ",".join([str(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1)]) for r in final_picks])
-                        
+                        ai_prompt = "\n".join([f"[{r.get('実行者','')} | レンズ:{r.get('予測ロジック','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI予知:{r.get('AI直感','')}] " + ",".join([str(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1)]) for r in final_picks])
+
                         past_lessons = get_recent_lessons()
+                        co_note = ("【今回はキャリーオーバー週】高額繰越のため、当たった時の“分け前”を最大化する大穴（人気回避＝高数字32〜37を多く含む口）を重く評価し、その狙いを講評に明記せよ。ただし当選確率自体は変わらない事実は踏まえること。\n" if decide_carryover else "")
                         prompt = f"""ユーザーからの特別作戦指示: "{user_instruction}"
-
+{co_note}
 【過去の反省会で得た学び（必ず踏まえ、同じ失敗を繰り返さず改善せよ）】
 {past_lessons if past_lessons else "（まだ蓄積された学びはありません）"}
 
-【システムが積み上げから厳選した{buy_count}口（各口に実行者の「その日の気持ち」が記録されています。社会:＝霊的:＝気持ちの言葉です）】
+【システムが積み上げから厳選した{buy_count}口（各口に「レンズ＝どの観点で選んだか」と実行者の「その日の気持ち」が記録されています）】
 {ai_prompt}
 """
                         try:
