@@ -1922,7 +1922,7 @@ elif st.session_state.menu == "最終予測決定":
     if st.button(f"🔥 蓄積データから {buy_count}口 を厳選し、超次元AIの絶対的予言レポートを生成", type="primary"):
         if not api_key: st.error("APIキーが設定されていません。")
         else:
-            with st.spinner(f"最強の予知能力を持った科学者（Gemini）が10億円を仕留めるための{buy_count}口を厳密に厳選中..."):
+            with st.spinner(f"最強の予知能力を持った科学者（Claude）が10億円を仕留めるための{buy_count}口を厳密に厳選中..."):
                 if df_note.empty: st.error("予測データがありません。")
                 else:
                     df_target = df_note[df_note["対象回号"] == t_round_decide_str]
