@@ -224,7 +224,15 @@ def claude_chat(messages, system=None, max_tokens=1500, model=None):
 # 3b. Gemini（第二のAI・任意）— 設定があれば“第二の意見”を出す
 # ==========================================
 # 無料枠あり。Google AI Studio でキーを取得し、Secrets に GEMINI_API_KEY を入れると有効化。
-GEMINI_MODEL = st.secrets.get("GEMINI_MODEL", os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"))
+# モデル名は時々変わる（古い名前は404になる）ので、Secrets指定が無ければ下の候補を上から順に自動で試す。
+GEMINI_MODEL = st.secrets.get("GEMINI_MODEL", os.environ.get("GEMINI_MODEL", "")).strip()
+GEMINI_FALLBACK_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash-001",
+    "gemini-1.5-flash",
+]
 
 def get_gemini_key():
     return st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
@@ -233,9 +241,19 @@ def gemini_available():
     """Geminiが使える状態か（キーがあるか）。"""
     return bool(get_gemini_key())
 
+def _gemini_model_candidates():
+    """試すモデル名の優先リスト。Secrets指定があれば最優先。"""
+    cands = []
+    if GEMINI_MODEL:
+        cands.append(GEMINI_MODEL)
+    for m in GEMINI_FALLBACK_MODELS:
+        if m not in cands:
+            cands.append(m)
+    return cands
+
 def ask_gemini(prompt, system=None, max_tokens=1500, image=None):
     """Geminiに単発で問い合わせる。未設定や失敗でもアプリは壊さず、案内/エラー文字列を返す。
-    imageはPIL Image（任意）。"""
+    モデル名が古い等の404系エラーは次の候補へ自動フォールバックする。imageはPIL Image（任意）。"""
     key = get_gemini_key()
     if not key:
         return "（Geminiキーが未設定です。Streamlit Secrets に GEMINI_API_KEY を追加すると、第二のAIが使えます）"
@@ -245,16 +263,30 @@ def ask_gemini(prompt, system=None, max_tokens=1500, image=None):
         return "（Geminiのライブラリ未導入です。requirements.txt に google-generativeai を入れて再デプロイしてください）"
     try:
         genai.configure(api_key=key)
-        model = genai.GenerativeModel(GEMINI_MODEL, system_instruction=system) if system else genai.GenerativeModel(GEMINI_MODEL)
-        parts = []
-        if image is not None:
-            parts.append(image)  # PIL Image をそのまま渡せる
-        parts.append(prompt)
-        resp = model.generate_content(parts, generation_config={"max_output_tokens": max_tokens})
-        txt = (getattr(resp, "text", "") or "").strip()
-        return txt or "（Geminiからの返答が空でした。もう一度お試しください）"
     except Exception as e:
-        return f"（Geminiの呼び出しでエラーが発生しました: {e}）"
+        return f"（Geminiの初期化でエラー: {e}。キー（GEMINI_API_KEY）が正しいか確認してください）"
+
+    last_err = ""
+    for mname in _gemini_model_candidates():
+        try:
+            model = genai.GenerativeModel(mname, system_instruction=system) if system else genai.GenerativeModel(mname)
+            parts = []
+            if image is not None:
+                parts.append(image)  # PIL Image をそのまま渡せる
+            parts.append(prompt)
+            resp = model.generate_content(parts, generation_config={"max_output_tokens": max_tokens})
+            txt = (getattr(resp, "text", "") or "").strip()
+            if txt:
+                return txt
+            last_err = "空の返答"
+        except Exception as e:
+            last_err = str(e)
+            le = last_err.lower()
+            # モデルが無い/廃止/未対応 → 次の候補へ。それ以外（認証・課金等）は即返す
+            if ("404" in last_err) or ("not found" in le) or ("no longer available" in le) or ("not supported" in le) or ("is not found" in le):
+                continue
+            return f"（Geminiの呼び出しでエラーが発生しました: {last_err}）"
+    return f"（利用可能なGeminiモデルが見つかりませんでした。最後のエラー: {last_err}。Secretsの GEMINI_MODEL に有効なモデル名を指定すると確実です）"
 
 AWAKENED_SCIENTIST_PROMPT = f"""
 【役割】あなたはロト7を多角的に読み解く、最強の分析官 Claude。霊的力・運・重力・潮汐・自然・暦（干支/九星/六曜）・出目理論・人間の欲（人気数字）・量子シード・実行者のその日の気持ちまで、あらゆる観点から冷徹かつ公正に分析する。

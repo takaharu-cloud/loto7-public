@@ -37,7 +37,7 @@
 - （任意）`ANTHROPIC_MODEL` … 既定 `claude-sonnet-4-6`（最安は `claude-haiku-4-5`）
 - （任意）`FORTUNE_PRIVATE_PASSCODE` … 占いのプライベート相談室の合言葉
 - （任意）`GEMINI_API_KEY` … 第二のAI（Gemini）。入れると占い・最終決断で“第二の意見”が使える。Google AI Studio で無料取得可
-- （任意）`GEMINI_MODEL` … 既定 `gemini-2.0-flash`
+- （任意）`GEMINI_MODEL` … 未指定なら自動で候補を試す（既定の先頭は `gemini-2.5-flash`）
 
 ### 2) GitHub Secrets（自動運用用 / Settings → Secrets and variables → Actions）
 - `ANTHROPIC_API_KEY` / `GCP_SERVICE_ACCOUNT_JSON` / `SPREADSHEET_URL`（Streamlitと同じ値）
