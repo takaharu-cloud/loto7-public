@@ -1523,6 +1523,8 @@ if st.session_state.menu == "ホーム":
         st.button("🔄 答え合わせと辛口の反省会（PDCA）", on_click=change_menu, args=("結果発表と振り返り",))
         st.write("")
         st.button("🔮 万能AI占い師の館", on_click=change_menu, args=("万能AI占い師の館",))
+        st.write("")
+        st.button("📋 データを見る（記録の確認）", on_click=change_menu, args=("データを見る",))
 
     if get_gspread_client() is None:
         st.error("データベース接続設定（Secrets）が未完了です。")
@@ -1869,18 +1871,25 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         if carryover:
                             alloc["人気回避(高数字)"] = 6  # 高額週は分け前重視で人気回避を厚く
 
+                        # ★固定バイアス防止：30口の中で同じ数字が出過ぎないよう上限を設ける（34/12/21等の張り付き解消）
+                        stack_usage = Counter()
+                        stack_cap = max(5, round(30 * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 2)  # ≒8（30口で1数字あたり最大8口程度）
+
                         def make_ticket(favs):
-                            favs = [n for n in dict.fromkeys(favs) if 1 <= n <= LOTO_MAX_NUM]
+                            # 上限に達した数字は種から除外
+                            favs = [n for n in dict.fromkeys(favs) if 1 <= n <= LOTO_MAX_NUM and stack_usage[n] < stack_cap]
                             seed_k = min(len(favs), random.choice([3, 4, 5]))
                             p = random.sample(favs, seed_k) if seed_k else []
                             tries = 0
-                            while len(p) < LOTO_PICK_COUNT and tries < 200:
+                            while len(p) < LOTO_PICK_COUNT and tries < 300:
                                 ch = random.choices(nums_list, weights=weights_list, k=1)[0]
-                                if ch not in p: p.append(ch)
+                                if ch not in p and stack_usage[ch] < stack_cap: p.append(ch)
                                 tries += 1
+                            # 上限で埋まらない分は“まだ使われていない数字”を優先（21〜25帯などの空白を解消）
                             while len(p) < LOTO_PICK_COUNT:
-                                ch = random.choice(nums_list)
-                                if ch not in p: p.append(ch)
+                                cand = [n for n in nums_list if n not in p and stack_usage[n] < stack_cap] or [n for n in nums_list if n not in p]
+                                mn = min(stack_usage[n] for n in cand)
+                                p.append(random.choice([n for n in cand if stack_usage[n] == mn]))
                             return sorted(p)
 
                         for lens, cnt in alloc.items():
@@ -1893,12 +1902,19 @@ elif st.session_state.menu == "日々の予想・積上げ":
                                     t = make_ticket(favs)
                                 top30.append({"nums": t, "pts": 0, "base_pts": int(sum(weights_list[n - 1] for n in t)), "type": lens})
                                 added.add(tuple(t))
-                        # 残りは「ランダム探索（未知）」で30口まで
+                                for n in t: stack_usage[n] += 1
+                        # 残りは「ランダム探索（未知）」で30口まで（上限を尊重＝まだ少ない数字を優先）
                         while len(top30) < 30:
-                            rp = sorted(random.sample(nums_list, LOTO_PICK_COUNT))
+                            rp = []
+                            while len(rp) < LOTO_PICK_COUNT:
+                                cand = [n for n in nums_list if n not in rp and stack_usage[n] < stack_cap] or [n for n in nums_list if n not in rp]
+                                mn = min(stack_usage[n] for n in cand)
+                                rp.append(random.choice([n for n in cand if stack_usage[n] == mn]))
+                            rp = sorted(rp)
                             if tuple(rp) in added: continue
                             top30.append({"nums": rp, "pts": 0, "base_pts": 0, "type": "ランダム探索(未知)"})
                             added.add(tuple(rp))
+                            for n in rp: stack_usage[n] += 1
                     else:
                         # 🎯 集中モード：全レンズを合成した加重から超並列シミュレーションで厳選
                         elites = []
@@ -2719,3 +2735,101 @@ elif st.session_state.menu == "万能AI占い師の館":
                     reply = send_to_fortune(text, image=img)
                     st.session_state[msg_key].append({"role": "assistant", "content": reply})
                 st.rerun()
+
+elif st.session_state.menu == "データを見る":
+    st.title("📋 データを見る（スプレッドシートの記録）")
+    st.caption("Googleスプレッドシート『ロト7究極予測室DB』の中身を、アプリの中でそのまま確認できます。ここは閲覧専用です（記録は一切変更されません）。")
+
+    def _show_number_balance(df, title):
+        num_cols = [c for c in df.columns if str(c).startswith("数字")]
+        if not num_cols:
+            return
+        cnt = Counter()
+        for _, r in df.iterrows():
+            for c in num_cols:
+                v = str(r.get(c, "")).strip()
+                if v.isdigit():
+                    cnt[int(v)] += 1
+        if cnt:
+            top = ", ".join(f"{n}×{c}" for n, c in cnt.most_common(12))
+            st.info(f"🔎 {title}：よく出ている数字 上位 → {top}")
+            missing = sorted(set(range(1, LOTO_MAX_NUM + 1)) - set(cnt))
+            if missing:
+                st.caption(f"一度も出ていない数字：{missing}")
+
+    def _latest_round(series):
+        def _rn(s):
+            m = re.findall(r'\d+', str(s))
+            return int(m[0]) if m else 0
+        vals = sorted(series.astype(str).unique(), key=_rn, reverse=True)
+        return vals[0] if vals else None
+
+    tabs = st.tabs(["🌍 予測ノート", "🎯 決断記録簿", "📊 当選履歴", "🏆 サイト成績", "🌐 他サイト予想", "📝 反省ログ", "🔗 サイトURL"])
+
+    with tabs[0]:
+        df = load_sheet("予測ノート")
+        if df.empty:
+            st.info("まだ予測ノートのデータがありません。『日々の予想・積上げ』で積み上げると、ここに記録されます。")
+        else:
+            if "対象回号" in df.columns:
+                rounds = "、".join(sorted(df["対象回号"].astype(str).unique()))
+                st.write(f"全 {len(df)} 行（口数）。対象回号：{rounds}")
+                latest = _latest_round(df["対象回号"])
+                if latest:
+                    sub = df[df["対象回号"].astype(str) == str(latest)]
+                    _show_number_balance(sub, f"最新 {latest} の積み上げ（{len(sub)}口）")
+                    if "予測ロジック" in sub.columns:
+                        lb = Counter(sub["予測ロジック"].astype(str))
+                        st.caption("観点(レンズ)の内訳：" + ", ".join(f"{k}×{v}" for k, v in lb.most_common()))
+            else:
+                st.write(f"全 {len(df)} 行")
+            st.dataframe(df, use_container_width=True, height=420)
+
+    with tabs[1]:
+        df = load_sheet("決断記録簿")
+        if df.empty:
+            st.info("まだ最終決定の記録がありません。")
+        else:
+            st.write(f"全 {len(df)} 件の最終決定が記録されています（追記式・上書きされません）。")
+            st.dataframe(df, use_container_width=True, height=420)
+
+    with tabs[2]:
+        df = load_sheet("実データ")
+        if df.empty:
+            st.info("当選履歴データがありません。")
+        else:
+            rng = ""
+            if "回号" in df.columns:
+                rs = df["回号"].astype(str).tolist()
+                rng = f"（{rs[0]} 〜 {rs[-1]}）" if rs else ""
+            st.write(f"当選履歴 {len(df)} 回分 {rng}。天気・暦などの環境列つき。")
+            st.dataframe(df, use_container_width=True, height=420)
+
+    with tabs[3]:
+        df = load_sheet("予想成績ログ")
+        if df.empty:
+            st.info("他サイトの成績ログはまだありません。")
+        else:
+            st.dataframe(df, use_container_width=True, height=420)
+
+    with tabs[4]:
+        df = load_sheet("他サイト予想")
+        if df.empty:
+            st.info("他サイト予想データがありません。")
+        else:
+            st.dataframe(df, use_container_width=True, height=420)
+
+    with tabs[5]:
+        df = load_sheet("反省ログ")
+        if df.empty:
+            st.info("反省ログがありません。")
+        else:
+            st.write(f"学び {len(df)} 件。")
+            st.dataframe(df, use_container_width=True, height=420)
+
+    with tabs[6]:
+        df = load_sheet("予想サイトURL")
+        if df.empty:
+            st.info("予想サイトURLが登録されていません。")
+        else:
+            st.dataframe(df, use_container_width=True, height=300)
