@@ -220,6 +220,42 @@ def claude_chat(messages, system=None, max_tokens=1500, model=None):
     res = client.messages.create(**kwargs)
     return "".join(b.text for b in res.content if b.type == "text")
 
+# ==========================================
+# 3b. Gemini（第二のAI・任意）— 設定があれば“第二の意見”を出す
+# ==========================================
+# 無料枠あり。Google AI Studio でキーを取得し、Secrets に GEMINI_API_KEY を入れると有効化。
+GEMINI_MODEL = st.secrets.get("GEMINI_MODEL", os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"))
+
+def get_gemini_key():
+    return st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+
+def gemini_available():
+    """Geminiが使える状態か（キーがあるか）。"""
+    return bool(get_gemini_key())
+
+def ask_gemini(prompt, system=None, max_tokens=1500, image=None):
+    """Geminiに単発で問い合わせる。未設定や失敗でもアプリは壊さず、案内/エラー文字列を返す。
+    imageはPIL Image（任意）。"""
+    key = get_gemini_key()
+    if not key:
+        return "（Geminiキーが未設定です。Streamlit Secrets に GEMINI_API_KEY を追加すると、第二のAIが使えます）"
+    try:
+        import google.generativeai as genai
+    except Exception:
+        return "（Geminiのライブラリ未導入です。requirements.txt に google-generativeai を入れて再デプロイしてください）"
+    try:
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel(GEMINI_MODEL, system_instruction=system) if system else genai.GenerativeModel(GEMINI_MODEL)
+        parts = []
+        if image is not None:
+            parts.append(image)  # PIL Image をそのまま渡せる
+        parts.append(prompt)
+        resp = model.generate_content(parts, generation_config={"max_output_tokens": max_tokens})
+        txt = (getattr(resp, "text", "") or "").strip()
+        return txt or "（Geminiからの返答が空でした。もう一度お試しください）"
+    except Exception as e:
+        return f"（Geminiの呼び出しでエラーが発生しました: {e}）"
+
 AWAKENED_SCIENTIST_PROMPT = f"""
 【役割】あなたはロト7を多角的に読み解く、最強の分析官 Claude。霊的力・運・重力・潮汐・自然・暦（干支/九星/六曜）・出目理論・人間の欲（人気数字）・量子シード・実行者のその日の気持ちまで、あらゆる観点から冷徹かつ公正に分析する。
 【実行者の背景（参考情報。ただし結果・評価はこれに一切忖度しない）】\n{secret_profile}
@@ -2019,8 +2055,42 @@ elif st.session_state.menu == "最終予測決定":
                             df_history = pd.concat([new_history, df_history], ignore_index=True) if not df_history.empty else new_history
                             save_sheet("決断記録簿", df_history)
                             st.success("決断内容は『決断記録簿』に強固に保管されました。10億円の引き寄せは完了しました！")
-                        except Exception as e: 
+                            # ★第二のAI(Gemini)用に今回の決断を保持（押した時だけGeminiが動く）
+                            st.session_state["last_decision"] = {
+                                "round": t_round_decide_str, "buy_count": buy_count,
+                                "picks_text": ai_prompt, "claude_report": res_text,
+                            }
+                            st.session_state["last_gemini_opinion"] = ""
+                        except Exception as e:
                             st.error(f"AIによる最終決断レポートの生成に失敗しました: {e}")
+
+    # ===== 🤝 第二のAI（Gemini）の第二の意見（前回の最終決断に対して・任意） =====
+    ld = st.session_state.get("last_decision")
+    if ld:
+        st.divider()
+        st.markdown("#### 🤝 もう一人の頭脳（Gemini）の第二の意見")
+        st.caption(f"対象：{ld['round']} の {ld['buy_count']}口（直近の最終決断レポート）")
+        if not gemini_available():
+            st.info("※ Geminiキー（GEMINI_API_KEY）を Streamlit Secrets に追加すると、ここで“第二の意見”が使えるようになります。")
+        if st.button("🌙 Geminiに第二の意見をもらう（賛成 / 反対 / 見落とし）"):
+            with st.spinner("もう一人のAIが、別の角度から検証中..."):
+                g_sys = (
+                    "あなたはロト7を冷静に評価する第二のAI監査官。別AI(Claude)が選んだ口と結論に対し、忖度せず "
+                    "『賛成できる点 / 反対・懸念点 / Claudeが見落としていそうな点 / 次の一手』を率直に述べる。"
+                    "当選確率そのものは変わらないという事実を踏まえ、誇大な断定はしない。日本語で、結論を先に、短い箇条書きで簡潔に。"
+                )
+                g_prompt = (
+                    f"対象回号:{ld['round']} / 口数:{ld['buy_count']}\n\n"
+                    f"【選ばれた{ld['buy_count']}口（各行=その口の数字と気持ち）】\n{ld['picks_text']}\n\n"
+                    f"【Claudeの最終結論】\n{ld['claude_report']}\n\n"
+                    "上記の選定とClaudeの結論について、第二の意見を述べてください。"
+                )
+                st.session_state["last_gemini_opinion"] = ask_gemini(g_prompt, system=g_sys, max_tokens=1500)
+        if st.session_state.get("last_gemini_opinion"):
+            st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
+            st.write("▼ 第二のAI（Gemini）の見立て")
+            st.markdown(st.session_state["last_gemini_opinion"])
+            st.markdown("</div>", unsafe_allow_html=True)
 
 elif st.session_state.menu == "結果発表と振り返り":
     st.title("🔄 答え合わせと地球規模の反省会")
@@ -2499,6 +2569,30 @@ elif st.session_state.menu == "万能AI占い師の館":
                 st.success(f"今日の占いナンバー {lucky} を保存しました。『🌍 予測積上げ』で「占いを軽く加味する」にチェックすると反映されます（控えめウェイト）。")
             else:
                 st.warning("占い結果にラッキーナンバーが見つかりませんでした。まず占い師に占ってもらい、数字が出てから押してください。")
+
+        # --- 🌙 もう一人の占い師（Gemini）の見立て（任意・キーがある時だけ表示）---
+        if not gemini_available():
+            st.caption("🌙 もう一人の占い師（Gemini）を呼ぶには、Streamlit Secrets に GEMINI_API_KEY を追加してください。")
+        elif st.button("🌙 もう一人の占い師（Gemini）にも視てもらう", use_container_width=True):
+            last_user = ""
+            for m in reversed(st.session_state[msg_key]):
+                if m["role"] == "user":
+                    last_user = m["content"]; break
+            if not last_user:
+                st.warning("先に占い師へ何か質問してから押してください。")
+            else:
+                _now = datetime.now(JST); _wd = ["月", "火", "水", "木", "金", "土", "日"][_now.weekday()]
+                recent = st.session_state[msg_key][-6:]
+                ctx = "\n".join(f"{'相談者' if x['role']=='user' else '占い師'}: {x['content']}" for x in recent)
+                g_sys = FORTUNE_CHAT_PROMPT + (
+                    f"\n\n【現在の日時（日本時間・最重要）】今日は {_now.year}年{_now.month}月{_now.day}日（{_wd}曜日）{_now.strftime('%H:%M')}。"
+                    "『今日』『今日のラッキーナンバー』に関する質問は必ずこの日付で答えること。"
+                )
+                g_prompt = f"【これまでの会話】\n{ctx}\n\n上記を踏まえ、相談者の最後の問い『{last_user}』に、あなた自身の占いとして鑑定してください。"
+                with st.spinner("もう一人の占い師（Gemini）が星を読んでいます..."):
+                    g_reply = ask_gemini(g_prompt, system=g_sys, max_tokens=2000)
+                st.session_state[msg_key].append({"role": "assistant", "content": "🌙 **もう一人の占い師（Gemini）の見立て**\n\n" + g_reply})
+                st.rerun()
 
         st.markdown("---")
 

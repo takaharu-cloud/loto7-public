@@ -5,4 +5,5 @@ beautifulsoup4
 anthropic
 gspread
 google-auth
+google-generativeai
 Pillow
