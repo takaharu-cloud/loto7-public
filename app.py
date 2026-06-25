@@ -1952,30 +1952,42 @@ elif st.session_state.menu == "最終予測決定":
                             
                         target_list.sort(key=lambda x: x['sort_pts'], reverse=True)
                         
+                        def _nums_of(c):
+                            return [int(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(c.get(f"数字{i}")).isdigit()]
+
                         final_picks = []
-                        used_start_nums = []
-                        used_end_nums = []
+                        used_start_nums, used_end_nums, num_usage, chosen_keys = [], [], Counter(), set()
                         limit_dupe_start = max(2, int(buy_count / 5))
                         limit_dupe_end = max(2, int(buy_count / 5))
+                        # ★各数字の出現上限（偏り防止）。均等なら buy_count*7/37 個。少し余裕を持たせる
+                        usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 3)
 
-                        for c in target_list:
-                            s = c.get('数字1')
-                            e = c.get(f'数字{LOTO_PICK_COUNT}')
-                            if used_start_nums.count(s) >= limit_dupe_start: continue
-                            if used_end_nums.count(e) >= limit_dupe_end: continue
-                            nums = set([int(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(c.get(f"数字{i}")).isdigit()])
-                            if any(len(nums & set([int(u.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(u.get(f"数字{i}")).isdigit()])) >= 4 for u in final_picks): continue
-                            
-                            final_picks.append(c)
-                            used_start_nums.append(s)
-                            used_end_nums.append(e)
-                            if len(final_picks) == buy_count: break
-                        
+                        for cap in [usage_cap, usage_cap + 3, usage_cap + 6, 999]:
+                            for c in target_list:
+                                if len(final_picks) >= buy_count: break
+                                key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
+                                if key in chosen_keys: continue
+                                s = c.get('数字1'); e = c.get(f'数字{LOTO_PICK_COUNT}')
+                                if used_start_nums.count(s) >= limit_dupe_start: continue
+                                if used_end_nums.count(e) >= limit_dupe_end: continue
+                                nums = _nums_of(c)
+                                if any(num_usage[n] >= cap for n in nums): continue
+                                if any(len(set(nums) & set(_nums_of(u))) >= 4 for u in final_picks): continue
+                                final_picks.append(c); chosen_keys.add(key)
+                                used_start_nums.append(s); used_end_nums.append(e)
+                                for n in nums: num_usage[n] += 1
+                            if len(final_picks) >= buy_count: break
+
                         if len(final_picks) < buy_count:
                             for c in target_list:
-                                if c not in final_picks:
-                                    final_picks.append(c)
-                                    if len(final_picks) == buy_count: break
+                                key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
+                                if key in chosen_keys: continue
+                                final_picks.append(c); chosen_keys.add(key)
+                                if len(final_picks) >= buy_count: break
+
+                        # 偏りチェック（各数字が何口に入ったか）を表示
+                        _bal = Counter(n for c in final_picks for n in _nums_of(c))
+                        st.caption("🔎 選んだ" + str(len(final_picks)) + "口の数字バランス（各数字が何口に出たか・上位）：" + ", ".join(f"{n}×{ct}" for n, ct in _bal.most_common(12)))
 
                         ai_prompt = "\n".join([f"[{r.get('実行者','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI予知:{r.get('AI直感','')}] " + ",".join([str(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1)]) for r in final_picks])
                         
@@ -2397,8 +2409,16 @@ elif st.session_state.menu == "万能AI占い師の館":
                 content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}})
             content.append({"type": "text", "text": text})
             st.session_state[fapi_key].append({"role": "user", "content": content})
+            # ★今日の日付（日本時間）を毎回システム指示に注入。「今日のラッキーナンバー」等で正しい日付を使わせる
+            _now = datetime.now(JST)
+            _wd = ["月", "火", "水", "木", "金", "土", "日"][_now.weekday()]
+            date_ctx = (
+                f"\n\n【現在の日時（日本時間・最重要）】今日は {_now.year}年{_now.month}月{_now.day}日（{_wd}曜日）{_now.strftime('%H:%M')} です。"
+                "『今日』『本日』『今日のラッキーナンバー』などの質問には、必ずこの日付を基準に答えること。"
+                "推測で別の日付を口にしてはならない。"
+            )
             try:
-                reply = claude_chat(st.session_state[fapi_key], system=FORTUNE_CHAT_PROMPT, max_tokens=3000)
+                reply = claude_chat(st.session_state[fapi_key], system=FORTUNE_CHAT_PROMPT + date_ctx, max_tokens=3000)
                 if not reply:
                     reply = "（波動が少し乱れました。もう一度、ゆっくり話しかけてください）"
             except Exception as e:
