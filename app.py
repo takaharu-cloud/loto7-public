@@ -625,6 +625,19 @@ def site_consensus_hot(df_other, top=7):
         nums += [int(x) for x in re.findall(r'\d+', str(s)) if 1 <= int(x) <= LOTO_MAX_NUM]
     return sorted([n for n, _ in Counter(nums).most_common(top)])
 
+def site_consensus_from_log(target_round, top=10):
+    """予想成績ログから、指定回号で多くのサイトが予想している“共通数字”トップを返す（コンセンサス）。
+    戻り値: [(数字, 支持サイト数), ...] を多い順。数字だけ欲しい時は [n for n,_ in ...]。"""
+    df_log = load_sheet("予想成績ログ")
+    if df_log.empty or "対象回号" not in df_log.columns:
+        return []
+    sub = df_log[df_log["対象回号"].astype(str) == str(target_round)]
+    nums = []
+    for _, r in sub.iterrows():
+        seen = set(int(x) for x in re.findall(r'\d+', str(r.get("予想数字", ""))) if 1 <= int(x) <= LOTO_MAX_NUM)
+        nums += list(seen)  # 同じサイト内の重複は1票に
+    return Counter(nums).most_common(top)
+
 # 🚀 【進化7】占い × ロト7 の橋渡し（偏り対策：別管理＋日付ごと＋控えめ反映）
 def save_fortune_lucky(nums, user=""):
     """占いが出した今日のラッキーナンバーをシート『占いラッキー』に保存（同じ日付＋同じ利用者は置き換え）。"""
@@ -1651,6 +1664,33 @@ elif st.session_state.menu == "最新データ取得":
     if st.button("📊 収集済みデータで横断分析する"):
         render_other_site_analysis(load_sheet("他サイト予想"), target_round_label)
 
+    # ✍️ 手入力（自動収集が不安定な時の“確実な”データ源）＋ みんなの共通数字（コンセンサス）
+    with st.expander("✍️ 他サイトの予想を手で入力する（確実・コンセンサス＆ランキングの材料）", expanded=False):
+        st.caption("予想サイトを見て、サイト名と予想数字（7個）を入れて『追加』。ここに入れた分は確実に『みんなの共通数字（コンセンサス）』と『サイト精度ランキング』に反映されます。抽選後に採点され、どのサイトが当たっているか分かってきます。")
+        mi1, mi2 = st.columns([1, 2])
+        site_name = mi1.text_input("サイト名（例：ロトラボ）", key="manual_site_name")
+        nums_text = mi2.text_input(f"予想数字（{LOTO_PICK_COUNT}個・カンマや空白区切り）例：3 9 14 21 28 33 36", key="manual_site_nums")
+        if st.button("➕ この予想を追加（成績ログに記録）"):
+            picked = sorted(dict.fromkeys(int(x) for x in re.findall(r'\d+', nums_text) if 1 <= int(x) <= LOTO_MAX_NUM))
+            if not site_name.strip():
+                st.warning("サイト名を入れてください。")
+            elif len(picked) < LOTO_PICK_COUNT:
+                st.warning(f"数字が{len(picked)}個でした。1〜{LOTO_MAX_NUM}の数字を{LOTO_PICK_COUNT}個入れてください。")
+            else:
+                one = pd.DataFrame([{"ソース": site_name.strip()[:60], "予想数字": ", ".join(str(n) for n in picked[:LOTO_PICK_COUNT])}])
+                log_site_predictions(one, target_round_label)
+                df_log2 = load_sheet("予想成績ログ")
+                cur = df_log2[df_log2["対象回号"].astype(str) == str(target_round_label)] if (not df_log2.empty and "対象回号" in df_log2.columns) else pd.DataFrame()
+                if not cur.empty:
+                    save_sheet("他サイト予想", cur[["ソース", "予想数字"]].reset_index(drop=True))
+                st.success(f"「{site_name.strip()}」の予想 {picked[:LOTO_PICK_COUNT]} を {target_round_label} に記録しました。")
+        cons = site_consensus_from_log(target_round_label, top=12)
+        if cons:
+            st.info(f"🤝 {target_round_label} の『みんなの共通数字（コンセンサス）』： " + ", ".join(f"{n}（{c}サイト）" for n, c in cons))
+            st.caption(f"→ 共通して多い数字：{sorted([n for n, _ in cons])}。これは積み上げの『他サイト総意』レンズにも自動で使われます。")
+        else:
+            st.caption("まだこの回の他サイト予想がありません。上で1件でも入れると、共通数字が出ます。")
+
 elif st.session_state.menu == "日々の予想・積上げ":
     st.title("🌍 地球規模の量子環境分析＆日々の予測積上げ")
     st.markdown("<div class='info-box'>明日、来週、その先へ。人間のバイアスを完全に破壊し、その日の宇宙の波動（動的量子シード）と物理演算（隣接波及効果）を融合させて真理の30口を積み上げます。</div>", unsafe_allow_html=True)
@@ -1731,6 +1771,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     ausp_labels, ausp_good = lens_auspicious_day(draw_date)
                     # 成績上位サイトの予想を、精度に応じて反映
                     trusted_site_w = get_trusted_site_numbers(df_real, target_round_str)
+                    # みんなが予想している“共通数字”（コンセンサス）。多くのサイトが推す数字。
+                    site_consensus_nums = [n for n, _ in site_consensus_from_log(target_round_str, top=10)]
 
                     st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
                     st.markdown("### 🔭 全方位レポート（観点＝レンズ別）")
@@ -1865,9 +1907,11 @@ elif st.session_state.menu == "日々の予想・積上げ":
                             "人気回避(高数字)": unpop_nums,
                             "占いラッキー": fortune_nums,
                             "他サイト成績上位": site_top,
+                            "他サイト総意(コンセンサス)": site_consensus_nums,
                         }
-                        alloc = {"過去頻度(土台)": 6, "引っ張り": 3, "スライド": 2, "環境共鳴(暦)": 3, "量子シード": 2,
-                                 "AI直感": 2, "ドッペルゲンガー": 2, "人気回避(高数字)": 2, "占いラッキー": 2, "他サイト成績上位": 3}
+                        alloc = {"過去頻度(土台)": 5, "引っ張り": 3, "スライド": 2, "環境共鳴(暦)": 3, "量子シード": 2,
+                                 "AI直感": 2, "ドッペルゲンガー": 2, "人気回避(高数字)": 2, "占いラッキー": 2,
+                                 "他サイト成績上位": 2, "他サイト総意(コンセンサス)": 2}
                         if carryover:
                             alloc["人気回避(高数字)"] = 6  # 高額週は分け前重視で人気回避を厚く
 
@@ -1975,9 +2019,9 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     
                     df_note = load_sheet("予測ノート")
                     new_df = pd.DataFrame(new_data)
-                    # 過去の記録は消さずに“追記”する（上書き防止）。完全に同一の行だけ重複排除。
+                    # 最新を上に積む（追記・上書きしない）。完全に同一の行だけ重複排除（最新側を残す）。
                     if not df_note.empty:
-                        df_note = pd.concat([df_note, new_df], ignore_index=True).drop_duplicates().reset_index(drop=True)
+                        df_note = pd.concat([new_df, df_note], ignore_index=True).drop_duplicates().reset_index(drop=True)
                     else:
                         df_note = new_df
                     save_sheet("予測ノート", df_note)
@@ -2768,6 +2812,8 @@ elif st.session_state.menu == "データを見る":
 
     with tabs[0]:
         df = load_sheet("予測ノート")
+        if not df.empty and "実行日" in df.columns:
+            df = df.sort_values("実行日", ascending=False, kind="stable").reset_index(drop=True)  # 最新を上に
         if df.empty:
             st.info("まだ予測ノートのデータがありません。『日々の予想・積上げ』で積み上げると、ここに記録されます。")
         else:
