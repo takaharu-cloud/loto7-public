@@ -275,6 +275,68 @@ def task_collect_sites(client, target_round):
     log(f"他サイト収集 {len(results)}件中 {ok}件抽出・成績ログ記録")
 
 
+def task_collect_via_web(client, target_round, anthropic_key):
+    """ウェブ検索（Claudeのweb_search）で他サイトの予想を自動収集（週1回・金曜のみ）。
+    スクレイピングが不安定でも、検索経由で確実に数件を集めて成績ログ＆コンセンサスに反映する。"""
+    if not anthropic_key:
+        return
+    try:
+        import anthropic
+        ac = anthropic.Anthropic(api_key=anthropic_key)
+    except Exception as e:
+        log(f"webサーチ収集スキップ(anthropic未導入): {e}")
+        return
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    prompt = (
+        f"日本の宝くじ『ロト7』（数字は1〜37から7個）について、{target_round}の予想数字を掲載している予想サイトを"
+        "ウェブ検索で3〜6件見つけてください。各サイトについて、必ず次の1行形式『だけ』を出力（前置き・説明・箇条書き記号は不要）：\n"
+        "サイト名 | n1,n2,n3,n4,n5,n6,n7\n"
+        "・数字は1〜37の“予想数字”を7個。過去の当選結果・日付・金額・順位は使わない。\n"
+        "・予想数字が確認できないサイトは出力しない。"
+    )
+    tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}]
+    messages = [{"role": "user", "content": prompt}]
+    text = ""
+    try:
+        for _ in range(4):
+            res = ac.messages.create(model=model, max_tokens=1500, tools=tools, messages=messages)
+            text += "".join(b.text for b in res.content if getattr(b, "type", "") == "text")
+            if getattr(res, "stop_reason", "") == "pause_turn":
+                messages.append({"role": "assistant", "content": res.content})
+                continue
+            break
+    except Exception as e:
+        log(f"webサーチ収集失敗（無視して継続）: {e}")
+        return
+    found = []
+    for line in text.splitlines():
+        if "|" not in line:
+            continue
+        name, _, nums_part = line.partition("|")
+        nums = sorted({int(n) for n in re.findall(r"\d+", nums_part) if 1 <= int(n) <= LOTO_MAX_NUM})
+        name = name.strip().strip("・-*#　●○▼>・ ").strip()
+        if name and len(nums) >= LOTO_PICK_COUNT:
+            found.append((name[:60], nums[:LOTO_PICK_COUNT]))
+    if not found:
+        log("webサーチ収集：予想数字を抽出できず")
+        return
+    now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
+    df_log = load_sheet(client, "予想成績ログ")
+    existing = df_log.to_dict("records") if not df_log.empty else []
+    incoming = {n for n, _ in found}
+    kept = [r for r in existing if not (str(r.get("対象回号", "")) == str(target_round) and str(r.get("ソース", "")) in incoming)]
+    for name, nums in found:
+        kept.append({"対象回号": str(target_round), "ソース": name, "予想数字": ", ".join(str(x) for x in nums), "取得日": now_str})
+    save_sheet(client, "予想成績ログ", pd.DataFrame(kept, columns=["対象回号", "ソース", "予想数字", "取得日"]))
+    # 他サイト予想（コンセンサス表示用）を当回の全ソースで再構築
+    full = load_sheet(client, "予想成績ログ")
+    if not full.empty and "対象回号" in full.columns:
+        curdf = full[full["対象回号"].astype(str) == str(target_round)]
+        if not curdf.empty and "ソース" in curdf.columns and "予想数字" in curdf.columns:
+            save_sheet(client, "他サイト予想", curdf[["ソース", "予想数字"]].reset_index(drop=True))
+    log(f"webサーチ収集 {len(found)}サイトを成績ログに記録（{target_round}）")
+
+
 SUPERVISOR_SYS = (
     "あなたはロト7プロジェクトの統括監督Claude。忖度せず、結果→分析→次回を締め、仕組みと習慣を厳しくも公正に鍛える。"
     "良い週は認め、悪い週は弱点・偏り・油断を容赦なく指摘。励ましで真実をぼかさない。当たらない確率が高い事実から目を逸らさせない。絵文字禁止。"
@@ -396,6 +458,12 @@ def main():
                 task_collect_sites(client, next_round_label(client))
             except Exception as e:
                 errors += 1; log(f"❌ 他サイト収集でエラー: {e}")
+            # ウェブ検索での自動収集は金曜(collect)のみ＝週1回（コスト抑制）。失敗してもAction全体は失敗させない。
+            if mode == "collect":
+                try:
+                    task_collect_via_web(client, next_round_label(client), os.environ.get("ANTHROPIC_API_KEY", ""))
+                except Exception as e:
+                    log(f"⚠ webサーチ収集は失敗（無視して継続）: {e}")
     log(f"自動更新 完了（エラー {errors} 件）")
     if errors:
         sys.exit(1)
