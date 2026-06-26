@@ -2183,10 +2183,14 @@ elif st.session_state.menu == "最終予測決定":
         "🆕 最新の積み上げ“1日分だけ”で決定する（OFF＝毎日積み上げた分を全部使う）", value=False,
         help="OFF（既定）＝あなたと奥さんが毎日積み上げた分を全部使って決定します（選択肢が多いほど偏りも抑えやすい）。ONにすると各人の最新の1日分だけに絞ります（古い形式の口を切り離したい時用）。記録はどちらでも消えません。",
     )
-    spread_first = st.checkbox(
-        "🎯 分散最優先モード（偏りを最小化＝①を◎寄りに。ただし⑤＝過去頻度の土台は弱まる）", value=False,
-        help="ONにすると、過去頻度よりも“数字を散らすこと”を最優先します。①数字の偏りが◎寄りになりますが、よく出る数字を押さえる⑤の強みは下がります。大穴とレンズ網羅は維持。プールに無い分は均等な口で補います。",
+    tighten_level = st.radio(
+        "締め具合（AIの指摘＝偏り・△口を反映して締める度合い。弱いと言われたら一段上げて“もう一度”押す）",
+        ["標準（バランス）", "きつめ（弱点を締める／△口を除外）", "最強（分散最優先）"],
+        index=0, horizontal=True,
+        help="標準＝今まで通り。きつめ＝△の口を除外し、同じ数字が出すぎないよう数字上限を一段締める（12・34の集中を抑制）。最強＝過去頻度より分散を最優先（①を◎に）。レポートで弱点を指摘されたら、ここを一段上げてボタンを押し直せば“再々決定”になります。",
     )
+    spread_first = tighten_level.startswith("最強")
+    tight_mode = tighten_level.startswith("きつめ")
 
     # AIへの指示は『完全自律』に固定（5択の選択は廃止）。口数を選んでボタンを押すだけ。
     user_instruction = "【完全自律】最強の予知科学者として、全次元のデータを統合し最適な10億捕捉陣形を構築せよ"
@@ -2254,7 +2258,7 @@ elif st.session_state.menu == "最終予測決定":
                         ooana_count = [0]  # 大穴の採用数（_try_add内で更新するためリストで保持）
                         limit_dupe_start = max(2, int(buy_count / 5))
                         limit_dupe_end = max(2, int(buy_count / 5))
-                        usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 2)  # 各数字の出現上限（偏り防止・均等+2程度）
+                        usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + (1 if tight_mode else 2))  # きつめは更に一段締める
                         cap_ladder = [usage_cap, usage_cap + 1, usage_cap + 2, usage_cap + 4, 999]  # 数字上限はできるだけ守る（ゆるやかに緩める）
 
                         def _try_add(c, cap):
@@ -2263,10 +2267,13 @@ elif st.session_state.menu == "最終予測決定":
                             if key in chosen_keys: return False
                             oo = _is_ooana(c)
                             if oo and ooana_count[0] >= ooana_target: return False  # 大穴は目標数で打ち止め
+                            nums = _nums_of(c)
+                            # きつめ：△の口（1帯域に固まりすぎ）は早い段階で除外。最後の緩和(cap大)では許容して必ず充足。
+                            if tight_mode and cap <= usage_cap + 1 and not oo and rate_ticket(nums, c.get('予測ロジック', '')) == "△":
+                                return False
                             s = c.get('数字1'); e = c.get(f'数字{LOTO_PICK_COUNT}')
                             if used_start_nums.count(s) >= limit_dupe_start: return False
                             if used_end_nums.count(e) >= limit_dupe_end: return False
-                            nums = _nums_of(c)
                             if any(num_usage[n] >= cap for n in nums): return False
                             if any(len(set(nums) & set(_nums_of(u))) >= 4 for u in final_picks): return False
                             final_picks.append(c); chosen_keys.add(key)
@@ -2436,6 +2443,28 @@ elif st.session_state.menu == "最終予測決定":
                             new_history = pd.DataFrame({"日時": [now_str], "対象回号": [t_round_decide_str], "決断内容": [save_text]})
                             df_history = pd.concat([new_history, df_history], ignore_index=True) if not df_history.empty else new_history
                             save_sheet("決断記録簿", df_history)
+
+                            # ★答え合わせ用に「最終買い目」を構造化保存（1口=1行・評価つき。同じ回号は最新で置換）
+                            sc_summary = " / ".join(f"{it['項目'][:5].strip()}{it['評価']}" for it in scorecard)
+                            buy_rows = []
+                            for x in per_rows:
+                                _nm = [v for v in x["数字"].split(",") if v.strip().isdigit()]
+                                row = {"日時": now_str, "対象回号": t_round_decide_str, "口": x["口"], "レンズ": x["レンズ"],
+                                       "口別評価": x["評価"], "スコアカード": sc_summary, "締め具合": tighten_level}
+                                for _j in range(LOTO_PICK_COUNT):
+                                    row[f"数字{_j+1}"] = (_nm[_j] if _j < len(_nm) else "")
+                                buy_rows.append(row)
+                            try:
+                                df_buy = load_sheet("最終買い目")
+                                new_buy = pd.DataFrame(buy_rows)
+                                if not df_buy.empty and "対象回号" in df_buy.columns:
+                                    df_buy = pd.concat([new_buy, df_buy[df_buy["対象回号"].astype(str) != str(t_round_decide_str)]], ignore_index=True)
+                                else:
+                                    df_buy = new_buy
+                                save_sheet("最終買い目", df_buy)
+                            except Exception as _e:
+                                st.caption(f"（最終買い目の保存はスキップ：{_e}）")
+
                             st.success("決断内容は『決断記録簿』に強固に保管されました。10億円の引き寄せは完了しました！")
                             # ★第二のAI(Gemini)用に今回の決断を保持（押した時だけGeminiが動く）
                             st.session_state["last_decision"] = {
@@ -2476,7 +2505,7 @@ elif st.session_state.menu == "最終予測決定":
 
 elif st.session_state.menu == "結果発表と振り返り":
     st.title("🔄 答え合わせと地球規模の反省会")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["予測の答え合わせ", "💬 宇宙と繋がる徹底反省会（PDCA）", "過去の決断記録簿", "🏆 当選環境アーカイブ分析", "🌦 天気×結果の検証", "🔬 バックテスト（本物か検証）", "📊 通算成績"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["予測の答え合わせ", "💬 宇宙と繋がる徹底反省会（PDCA）", "過去の決断記録簿", "🏆 当選環境アーカイブ分析", "🌦 天気×結果の検証", "🔬 バックテスト（本物か検証）", "📊 通算成績", "🔎 AI分析の答え合わせ"])
     
     df_note = load_sheet("予測ノート")
     df_real = load_sheet("実データ")
@@ -2501,6 +2530,65 @@ elif st.session_state.menu == "結果発表と振り返り":
             st.write("※ 最新データ取得時に自動で採点された結果です。")
             display_cols = ["AIの助言", "実行者", "口数"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["社会情勢", "霊的要素"]
             st.dataframe(df_target[[c for c in display_cols if c in df_target.columns]], height=400)
+
+    with tab8:
+        st.markdown("#### 🔎 前回のAI分析・口別評価は当たっていたか（答え合わせ）")
+        st.caption("最終決定で保存した買い目と評価を、実際の当選結果と突き合わせ、『◎の口は本当に当たったか／指摘した弱点は影響したか』を事実で検証します。回を重ねて分析の精度を詰めるための画面です。")
+        df_buy = load_sheet("最終買い目")
+        actual_v = actual_numbers_for_round(df_real, t_round_rev_str)
+        if df_buy.empty or "対象回号" not in df_buy.columns:
+            st.info("まだ『最終買い目』の保存がありません。最終決定を一度実行すると、次回からここで答え合わせできます。")
+        elif not actual_v:
+            st.info(f"{t_round_rev_str} の当選結果がまだ取り込まれていません（抽選後に『📡 最新データ取得』を実行してください）。")
+        else:
+            sub_v = df_buy[df_buy["対象回号"].astype(str) == str(t_round_rev_str)]
+            if sub_v.empty:
+                st.info(f"{t_round_rev_str} の最終買い目の保存がありません（この回は最終決定を保存していません）。")
+            else:
+                rows_v = []
+                for _, r in sub_v.iterrows():
+                    nums = [int(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(r.get(f"数字{i}", "")).isdigit()]
+                    rows_v.append({"口": r.get("口"), "レンズ": r.get("レンズ"), "口別評価": str(r.get("口別評価", "")),
+                                   "的中数": len(set(nums) & actual_v), "数字": ",".join(str(n).zfill(2) for n in nums)})
+                st.write(f"正解番号（{t_round_rev_str}）: **{sorted(actual_v)}**")
+                st.dataframe(pd.DataFrame(rows_v).sort_values("的中数", ascending=False), use_container_width=True, height=300)
+
+                def _avg(mark):
+                    hs = [x["的中数"] for x in rows_v if x["口別評価"] == mark]
+                    return (round(sum(hs) / len(hs), 2), len(hs)) if hs else (None, 0)
+                a2, n2 = _avg("◎"); a1, n1 = _avg("○"); a0, n0 = _avg("△")
+                st.markdown("##### 口別評価は的中と相関したか（◎ほど当たっていれば評価は妥当）")
+                cc = st.columns(3)
+                cc[0].metric("◎の平均的中", a2 if a2 is not None else "—", f"{n2}口")
+                cc[1].metric("○の平均的中", a1 if a1 is not None else "—", f"{n1}口")
+                cc[2].metric("△の平均的中", a0 if a0 is not None else "—", f"{n0}口")
+                best_v = max(rows_v, key=lambda x: x["的中数"])
+                st.write(f"最高的中：口{best_v['口']}（{best_v['レンズ']}・評価{best_v['口別評価']}）＝ **{best_v['的中数']}個**　／　全{len(rows_v)}口の最高 {best_v['的中数']}個")
+                sc_v = str(sub_v.iloc[0].get("スコアカード", ""))
+                if sc_v and sc_v != "nan":
+                    st.caption("決定時のスコアカード：" + sc_v)
+                verdict = []
+                if a2 is not None and a0 is not None:
+                    if a2 > a0: verdict.append("◎の口が△の口より平均的中が高い＝今回は口別評価が“当たって”いた。")
+                    elif a2 < a0: verdict.append("△の口の方が当たった＝今回は評価が外れた（評価は確率を保証しない＝各回が独立な証拠）。")
+                    else: verdict.append("◎と△で差なし＝今回は評価が的中差に表れなかった。")
+                verdict.append("※ロト7は毎回独立。1回の結果で評価の良し悪しは決まりません。回を重ねて傾向を見ること。")
+                st.info(" ".join(verdict))
+                if st.button("🧠 AIにこの答え合わせを総括させる（任意・少額のAPI）"):
+                    if not api_key:
+                        st.error("APIキーが未設定です。")
+                    else:
+                        with st.spinner("AIが分析の正否を検証中..."):
+                            vp = (f"対象:{t_round_rev_str} 正解:{sorted(actual_v)}\n口別評価と的中:\n"
+                                  + "\n".join(f"口{x['口']}({x['レンズ']}) 評価{x['口別評価']} 的中{x['的中数']}個 [{x['数字']}]" for x in rows_v)
+                                  + f"\n決定時スコアカード:{sc_v}")
+                            vv = ask_claude(
+                                "次は前回の最終決定の『口別評価・スコアカード』と実際の的中の答え合わせです。"
+                                "評価は当たっていたか、弱点指摘は妥当だったかを忖度なく検証し、次回の改善を1〜2点だけ。"
+                                "ロト7は各回独立なので1回で断定せず、傾向として語ること。誇大表現禁止。\n\n" + vp,
+                                system=REVIEW_PDCA_PROMPT, max_tokens=1200)
+                            if vv:
+                                st.markdown(vv)
 
     with tab2:
         st.markdown("#### 💬 一歩一歩真実に近づくための、量子レベルでの反省会")
