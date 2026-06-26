@@ -2153,6 +2153,10 @@ elif st.session_state.menu == "最終予測決定":
         "🆕 最新の積み上げ“1日分だけ”で決定する（OFF＝毎日積み上げた分を全部使う）", value=False,
         help="OFF（既定）＝あなたと奥さんが毎日積み上げた分を全部使って決定します（選択肢が多いほど偏りも抑えやすい）。ONにすると各人の最新の1日分だけに絞ります（古い形式の口を切り離したい時用）。記録はどちらでも消えません。",
     )
+    spread_first = st.checkbox(
+        "🎯 分散最優先モード（偏りを最小化＝①を◎寄りに。ただし⑤＝過去頻度の土台は弱まる）", value=False,
+        help="ONにすると、過去頻度よりも“数字を散らすこと”を最優先します。①数字の偏りが◎寄りになりますが、よく出る数字を押さえる⑤の強みは下がります。大穴とレンズ網羅は維持。プールに無い分は均等な口で補います。",
+    )
 
     # AIへの指示は『完全自律』に固定（5択の選択は廃止）。口数を選んでボタンを押すだけ。
     user_instruction = "【完全自律】最強の予知科学者として、全次元のデータを統合し最適な10億捕捉陣形を構築せよ"
@@ -2278,6 +2282,61 @@ elif st.session_state.menu == "最終予測決定":
                                     final_picks.append(c); chosen_keys.add(key)
                                     for n in nums: num_usage[n] += 1
                                 if len(final_picks) >= buy_count: break
+
+                        # 🎯 分散最優先モード：偏りを最小化（過去頻度より分散を優先）。大穴とレンズ網羅は維持。
+                        if spread_first:
+                            final_picks = []
+                            _nu, _ch, _oc = Counter(), set(), [0]
+                            _tight = round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 1
+                            def _add_sp(c, cap):
+                                if len(final_picks) >= buy_count: return False
+                                k = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
+                                if k in _ch: return False
+                                oo = _is_ooana(c)
+                                if oo and _oc[0] >= ooana_target: return False
+                                nums = _nums_of(c)
+                                if any(_nu[n] >= cap for n in nums): return False
+                                final_picks.append(c); _ch.add(k)
+                                for n in nums: _nu[n] += 1
+                                if oo: _oc[0] += 1
+                                return True
+                            if ooana_target > 0:
+                                for cap in [_tight, _tight + 1, 999]:
+                                    for c in target_list:
+                                        if _oc[0] >= ooana_target or len(final_picks) >= buy_count: break
+                                        if _is_ooana(c): _add_sp(c, cap)
+                                    if _oc[0] >= ooana_target: break
+                            _seen = set(str(c.get('予測ロジック', '')) for c in final_picks)
+                            for cap in [_tight, _tight + 1]:
+                                for c in target_list:
+                                    if len(final_picks) >= buy_count: break
+                                    lg = str(c.get('予測ロジック', ''))
+                                    if lg in _seen: continue
+                                    if _add_sp(c, cap): _seen.add(lg)
+                            _guard = 0
+                            while len(final_picks) < buy_count and _guard < 2000:
+                                _guard += 1
+                                _best, _bs = None, -1
+                                for c in target_list:
+                                    k = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
+                                    if k in _ch: continue
+                                    nums = _nums_of(c)
+                                    if any(_nu[n] >= _tight for n in nums): continue
+                                    sc = sum(1 for n in nums if _nu[n] == 0) * 2 + sum(1 for n in nums if _nu[n] <= 1)
+                                    if sc > _bs: _bs, _best = sc, (c, k, nums)
+                                if _best:
+                                    c, k, nums = _best
+                                    final_picks.append(c); _ch.add(k)
+                                    for n in nums: _nu[n] += 1
+                                else:
+                                    _cand = sorted(sorted(range(1, LOTO_MAX_NUM + 1), key=lambda n: (_nu[n], random.random()))[:10])
+                                    _pick = sorted(random.sample(_cand, LOTO_PICK_COUNT))
+                                    k = tuple(str(n).zfill(2) for n in _pick)
+                                    if k in _ch: continue
+                                    _syn = {"実行者": "システム(分散補完)", "口数": "-", "社会情勢": "", "霊的要素": "", "AI直感": "", "予測ロジック": "分散補完"}
+                                    for i, n in enumerate(_pick, 1): _syn[f"数字{i}"] = str(n).zfill(2)
+                                    final_picks.append(_syn); _ch.add(k)
+                                    for n in _pick: _nu[n] += 1
 
                         # 偏りチェック＆“何の要素が入ったか”を表示
                         _bal = Counter(n for c in final_picks for n in _nums_of(c))
