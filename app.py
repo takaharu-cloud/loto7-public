@@ -2106,6 +2106,8 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         df_note = pd.concat([new_df, df_note], ignore_index=True).drop_duplicates().reset_index(drop=True)
                     else:
                         df_note = new_df
+                    if "実行日" in df_note.columns:
+                        df_note = df_note.sort_values("実行日", ascending=False, kind="stable").reset_index(drop=True)  # 常に最新が上
                     save_sheet("予測ノート", df_note)
                     st.success(f"固定バイアスを完全排除し、動的量子シードと物理演算を駆使して、{target_round_str}に向けて最強の{len(top30)}口を積み上げました。（担当: {operator}）")
 
@@ -2356,7 +2358,7 @@ elif st.session_state.menu == "最終予測決定":
                     f"【Claudeの最終結論】\n{ld['claude_report']}\n\n"
                     "上記の選定とClaudeの結論について、第二の意見を述べてください。"
                 )
-                st.session_state["last_gemini_opinion"] = ask_gemini(g_prompt, system=g_sys, max_tokens=1500)
+                st.session_state["last_gemini_opinion"] = ask_gemini(g_prompt, system=g_sys, max_tokens=2200)
         if st.session_state.get("last_gemini_opinion"):
             st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
             st.write("▼ 第二のAI（Gemini）の見立て")
@@ -2892,7 +2894,28 @@ elif st.session_state.menu == "万能AI占い師の館":
 
 elif st.session_state.menu == "データを見る":
     st.title("📋 データを見る（スプレッドシートの記録）")
-    st.caption("Googleスプレッドシート『ロト7究極予測室DB』の中身を、アプリの中でそのまま確認できます。ここは閲覧専用です（記録は一切変更されません）。")
+    st.caption("Googleスプレッドシート『ロト7究極予測室DB』の中身を、アプリの中でそのまま確認できます。下のタブは閲覧専用です。")
+
+    # 🔃 既存の記録を新しい順に並べ替える（順番だけ・記録は消えません）
+    _cs1, _cs2 = st.columns([3, 1])
+    _cs1.caption("📌 古い記録が上に残っている時は、右のボタンで『最新が上』に並べ替えできます（順番を直すだけで、記録は消えません）。")
+    if _cs2.button("🔃 新しい順に並べ替え", use_container_width=True):
+        with st.spinner("記録を新しい順に並べ替えています..."):
+            done = []
+            _dfp = load_sheet("予測ノート")
+            if not _dfp.empty and "実行日" in _dfp.columns:
+                _dfp = _dfp.sort_values("実行日", ascending=False, kind="stable").reset_index(drop=True)
+                if save_sheet("予測ノート", _dfp):
+                    done.append(f"予測ノート（{len(_dfp)}行）")
+            _dfd = load_sheet("決断記録簿")
+            if not _dfd.empty and "日時" in _dfd.columns:
+                _dfd = _dfd.sort_values("日時", ascending=False, kind="stable").reset_index(drop=True)
+                if save_sheet("決断記録簿", _dfd):
+                    done.append("決断記録簿")
+        if done:
+            st.success("最新が上になるよう並べ替えました：" + " ／ ".join(done) + "。スプレッドシートを開くと反映されています。")
+        else:
+            st.info("並べ替える記録が見つかりませんでした。")
 
     def _show_number_balance(df, title):
         num_cols = [c for c in df.columns if str(c).startswith("数字")]
