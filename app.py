@@ -638,6 +638,22 @@ def site_consensus_from_log(target_round, top=10):
         nums += list(seen)  # 同じサイト内の重複は1票に
     return Counter(nums).most_common(top)
 
+def rate_ticket(nums, lens):
+    """1口(7数字)の“個別バランス”を◎○△で評価。
+    大穴(人気回避)は高数字寄せが狙いなので○以上。通常口は帯域の散らばりで判定（1帯域に固まりすぎ=△）。"""
+    valid = [n for n in nums if 1 <= n <= LOTO_MAX_NUM]
+    high = sum(1 for n in valid if n >= 32)
+    bands = Counter((n - 1) // 10 for n in valid)
+    mb = max(bands.values()) if bands else 7
+    nb = len(bands)
+    if ("人気回避" in str(lens)) or high >= 3:
+        return "◎" if high >= 4 else "○"
+    if mb >= 5 or nb <= 2:
+        return "△"
+    if nb >= 3 and mb <= 3:
+        return "◎"
+    return "○"
+
 def evaluate_formation(final_picks, df_real, ooana_target, prev_actual):
     """買い目の陣形を7項目で◎○△×評価（実測ベース＝AIの感想ではなく事実）。
     戻り値: [{"項目","評価","実測","一言"}, ...]（7件）。"""
@@ -2001,19 +2017,33 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         stack_usage = Counter()
                         stack_cap = max(5, round(30 * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 2)  # ≒8（30口で1数字あたり最大8口程度）
 
-                        def make_ticket(favs):
+                        def make_ticket(favs, lens=""):
                             # 上限に達した数字は種から除外
                             favs = [n for n in dict.fromkeys(favs) if 1 <= n <= LOTO_MAX_NUM and stack_usage[n] < stack_cap]
+                            # ★個々の口もバランス：1帯域(1-10/11-20/21-30/31-37)は最大3個まで＝低域固まり(△)を防ぐ。
+                            #   ただし大穴(人気回避)は高数字寄せが狙いなので帯域制約を外す。
+                            band_balance = ("人気回避" not in str(lens))
+                            def _band(n): return (n - 1) // 10
+                            p = []
+                            def _band_ok(n):
+                                if not band_balance: return True
+                                return sum(1 for x in p if _band(x) == _band(n)) < 3
+                            # 種：favsから帯域を散らして3〜5個
                             seed_k = min(len(favs), random.choice([3, 4, 5]))
-                            p = random.sample(favs, seed_k) if seed_k else []
+                            fv = favs[:]; random.shuffle(fv)
+                            for n in fv:
+                                if len(p) >= seed_k: break
+                                if _band_ok(n): p.append(n)
                             tries = 0
-                            while len(p) < LOTO_PICK_COUNT and tries < 300:
+                            while len(p) < LOTO_PICK_COUNT and tries < 400:
                                 ch = random.choices(nums_list, weights=weights_list, k=1)[0]
-                                if ch not in p and stack_usage[ch] < stack_cap: p.append(ch)
+                                if ch not in p and stack_usage[ch] < stack_cap and _band_ok(ch): p.append(ch)
                                 tries += 1
-                            # 上限で埋まらない分は“まだ使われていない数字”を優先（21〜25帯などの空白を解消）
+                            # 帯域・上限で埋まらない分は“まだ使われていない数字”を優先
                             while len(p) < LOTO_PICK_COUNT:
-                                cand = [n for n in nums_list if n not in p and stack_usage[n] < stack_cap] or [n for n in nums_list if n not in p]
+                                cand = ([n for n in nums_list if n not in p and stack_usage[n] < stack_cap and _band_ok(n)]
+                                        or [n for n in nums_list if n not in p and stack_usage[n] < stack_cap]
+                                        or [n for n in nums_list if n not in p])
                                 mn = min(stack_usage[n] for n in cand)
                                 p.append(random.choice([n for n in cand if stack_usage[n] == mn]))
                             return sorted(p)
@@ -2022,10 +2052,10 @@ elif st.session_state.menu == "日々の予想・積上げ":
                             favs = lens_favs.get(lens, [])
                             for _ in range(cnt):
                                 if len(top30) >= 30: break
-                                t = make_ticket(favs)
+                                t = make_ticket(favs, lens)
                                 for _retry in range(8):
                                     if tuple(t) not in added: break
-                                    t = make_ticket(favs)
+                                    t = make_ticket(favs, lens)
                                 top30.append({"nums": t, "pts": 0, "base_pts": int(sum(weights_list[n - 1] for n in t)), "type": lens})
                                 added.add(tuple(t))
                                 for n in t: stack_usage[n] += 1
@@ -2355,6 +2385,19 @@ elif st.session_state.menu == "最終予測決定":
                         st.caption("内訳： " + " ／ ".join(f"{g}×{_gcount.get(g, 0)}" for g in ["◎", "○", "△", "×"]) + "（◎○が多いほど全体バランス良好。△×の項目は下のレポートで改善策を確認）")
                         scorecard_text = "\n".join(f"{it['項目']}：{it['評価']}（{it['実測']}）" for it in scorecard)
 
+                        # 🧾 口別の個別バランス評価（◎○△・実測）。最低○を目標。
+                        per_rows = []
+                        for _i, _r in enumerate(final_picks, 1):
+                            _nm = _nums_of(_r)
+                            per_rows.append({"口": _i, "レンズ": str(_r.get("予測ロジック", "")),
+                                             "数字": ",".join(str(n).zfill(2) for n in _nm),
+                                             "評価": rate_ticket(_nm, _r.get("予測ロジック", ""))})
+                        _pc = Counter(x["評価"] for x in per_rows)
+                        st.markdown("#### 🧾 口別バランス評価（各口が個別に散らばっているか・実測）")
+                        st.caption("内訳： " + " ／ ".join(f"{g}×{_pc.get(g, 0)}" for g in ["◎", "○", "△"]) + "（△＝1帯域に固まりすぎ。最低○が目標。大穴は高数字寄せOK）")
+                        st.dataframe(pd.DataFrame(per_rows), use_container_width=True, height=320)
+                        per_text = "\n".join(f"口{x['口']}({x['レンズ']}): {x['評価']} [{x['数字']}]" for x in per_rows)
+
                         ai_prompt = "\n".join([f"[{r.get('実行者','')} | レンズ:{r.get('予測ロジック','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI予知:{r.get('AI直感','')}] " + ",".join([str(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1)]) for r in final_picks])
 
                         past_lessons = get_recent_lessons()
@@ -2363,6 +2406,9 @@ elif st.session_state.menu == "最終予測決定":
 {co_note}
 【システムが実測で出した総合評価スコアカード（◎○△×）。この評価は“事実”なので否定せず必ずこの通りに受け止め、レポート冒頭にこのスコアカードの要約（各項目の評価と一言）を置き、△と×の項目には具体的な改善策を示すこと】
 {scorecard_text}
+
+【各口の個別バランス評価（◎○△・実測。最低○が目標）。各口の講評はこの評価を正として行い、△の口があればその理由（どの帯域に固まっているか）と改善を述べること】
+{per_text}
 
 【過去の反省会で得た学び（必ず踏まえ、同じ失敗を繰り返さず改善せよ）】
 {past_lessons if past_lessons else "（まだ蓄積された学びはありません）"}
