@@ -2179,10 +2179,7 @@ elif st.session_state.menu == "最終予測決定":
         min_value=0, max_value=int(buy_count), value=int(min(_default_ooana, buy_count)), step=1,
         help="例：20口で『4』にすると、大穴4口＋バランス16口。多すぎると高数字に偏るので4前後が目安。『0』にすると大穴の強制確保なし。",
     )
-    use_latest_stack = st.checkbox(
-        "🆕 最新の積み上げ“1日分だけ”で決定する（OFF＝毎日積み上げた分を全部使う）", value=False,
-        help="OFF（既定）＝あなたと奥さんが毎日積み上げた分を全部使って決定します（選択肢が多いほど偏りも抑えやすい）。ONにすると各人の最新の1日分だけに絞ります（古い形式の口を切り離したい時用）。記録はどちらでも消えません。",
-    )
+    st.caption("🆕 この回（選んだ回号）に向けて積み上げた予測を“全部”使って決定します。別の回の予測は混ざりません。")
     tighten_level = st.radio(
         "締め具合（AIの指摘＝偏り・△口を反映して締める度合い。弱いと言われたら一段上げて“もう一度”押す）",
         ["標準（バランス）", "きつめ（弱点を締める／△口を除外）", "最強（分散最優先）"],
@@ -2201,20 +2198,11 @@ elif st.session_state.menu == "最終予測決定":
             with st.spinner(f"最強の予知能力を持った科学者（Claude）が10億円を仕留めるための{buy_count}口を厳密に厳選中..."):
                 if df_note.empty: st.error("予測データがありません。")
                 else:
+                    # この回（対象回号）に向けて積み上げた予測だけを使う（他の回は対象回号が違うので自動的に混ざらない）
                     df_target = df_note[df_note["対象回号"] == t_round_decide_str]
                     if df_target.empty: st.warning(f"指定された回号（{t_round_decide_str}）の予測積み上げデータがありません。先に「日々の予測・積上げ」を実行してください。")
                     else:
-                        # 🆕 最新の積み上げだけを使う（実行者ごとに最新の実行日のみ）＝古い偏った口を除外
-                        if use_latest_stack and "実行者" in df_target.columns and "実行日" in df_target.columns:
-                            keep_idx = []
-                            for _op, _g in df_target.groupby("実行者"):
-                                _md = _g["実行日"].astype(str).max()
-                                keep_idx += _g[_g["実行日"].astype(str) == _md].index.tolist()
-                            if keep_idx:
-                                _excluded = len(df_target) - len(keep_idx)
-                                df_target = df_target.loc[keep_idx]
-                                if _excluded > 0:
-                                    st.caption(f"🆕 最新の積み上げ {len(df_target)}口で決定（古い {_excluded}口は除外。記録は『データを見る』に残っています）。")
+                        st.caption(f"📦 {t_round_decide_str} 用に積み上げた予測 {len(df_target)}口を“全部”使って決定します。")
                         target_list = df_target.to_dict('records')
                         
                         # ===== 多角的スコアリング（過去頻度の土台＋気持ち＋大穴ブースト）=====
