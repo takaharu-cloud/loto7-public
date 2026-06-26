@@ -638,6 +638,88 @@ def site_consensus_from_log(target_round, top=10):
         nums += list(seen)  # 同じサイト内の重複は1票に
     return Counter(nums).most_common(top)
 
+def evaluate_formation(final_picks, df_real, ooana_target, prev_actual):
+    """買い目の陣形を7項目で◎○△×評価（実測ベース＝AIの感想ではなく事実）。
+    戻り値: [{"項目","評価","実測","一言"}, ...]（7件）。"""
+    def _nums(c):
+        return [int(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(c.get(f"数字{i}")).isdigit()]
+    n = len(final_picks) or 1
+    all_nums = [x for c in final_picks for x in _nums(c)]
+    freq = Counter(all_nums)
+    even = n * LOTO_PICK_COUNT / LOTO_MAX_NUM  # 均等時の1数字あたり口数
+    items = []
+
+    # ① 数字の偏りの無さ（設計上の上限=均等+2程度なので、それを○の基準にする）
+    mx = max(freq.values()) if freq else 0
+    g = "◎" if mx <= even + 1.5 else "○" if mx <= even + 2.5 else "△" if mx <= even + 4.5 else "×"
+    items.append({"項目": "① 数字の偏りの無さ", "評価": g, "実測": f"最多 {mx}口（均等≈{even:.1f}）", "一言": "特定数字への張り付きが無いか"})
+
+    # ② 数字帯のバランス（1-10/11-20/21-30/31-37）
+    bands = {"1-10": 0, "11-20": 0, "21-30": 0, "31-37": 0}
+    for x in all_nums:
+        if x <= 10: bands["1-10"] += 1
+        elif x <= 20: bands["11-20"] += 1
+        elif x <= 30: bands["21-30"] += 1
+        else: bands["31-37"] += 1
+    total = sum(bands.values()) or 1
+    exp = {"1-10": 10 / 37, "11-20": 10 / 37, "21-30": 10 / 37, "31-37": 7 / 37}
+    worst = min((bands[b] / total) / exp[b] for b in bands)  # 1.0で期待通り、小さいほど不足
+    g = "◎" if worst >= 0.7 else "○" if worst >= 0.5 else "△" if worst >= 0.25 else "×"
+    items.append({"項目": "② 数字帯のバランス", "評価": g, "実測": "／".join(f"{b}:{bands[b]}" for b in bands), "一言": "1〜37を満遍なくカバーしているか"})
+
+    # ③ 大穴（分け前狙い）の確保
+    high = set(range(32, LOTO_MAX_NUM + 1))
+    ooana_n = sum(1 for c in final_picks if ("人気回避" in str(c.get('予測ロジック', ''))) or sum(1 for x in _nums(c) if x in high) >= 3)
+    if ooana_target <= 0:
+        g, note = "◎", "今回は大穴指定なし"
+    else:
+        g = "◎" if ooana_n >= ooana_target else "○" if ooana_n >= ooana_target - 1 else "△" if ooana_n >= 1 else "×"
+        note = f"{ooana_n}/{ooana_target}口"
+    items.append({"項目": "③ 大穴（分け前狙い）の確保", "評価": g, "実測": note, "一言": "高数字32〜37の大穴口が狙い通り入っているか"})
+
+    # ④ 観点（レンズ）の多様性
+    nl = len(set(str(c.get('予測ロジック', '')) for c in final_picks))
+    g = "◎" if nl >= 8 else "○" if nl >= 6 else "△" if nl >= 4 else "×"
+    items.append({"項目": "④ 観点（レンズ）の多様性", "評価": g, "実測": f"{nl}観点", "一言": "色々な狙いの口がそろっているか"})
+
+    # ⑤ 過去頻度の土台
+    top_freq = []
+    if df_real is not None and not df_real.empty:
+        cnt = Counter()
+        for _, r in df_real.iterrows():
+            for i in range(1, LOTO_PICK_COUNT + 1):
+                v = r.get(f"数字{i}")
+                if str(v).isdigit(): cnt[int(v)] += 1
+        top_freq = [x for x, _ in cnt.most_common(10)]
+    if not top_freq:
+        g, note = "△", "当選履歴なし"
+    else:
+        covered = len(set(top_freq) & set(freq))
+        g = "◎" if covered >= 8 else "○" if covered >= 6 else "△" if covered >= 4 else "×"
+        note = f"頻出トップ10のうち {covered}個を含む"
+    items.append({"項目": "⑤ 過去頻度の土台", "評価": g, "実測": note, "一言": "よく出る数字を押さえているか"})
+
+    # ⑥ 直近の的中軸の継承
+    if prev_actual:
+        ov = len(set(prev_actual) & set(freq))
+        g = "◎" if ov >= 5 else "○" if ov >= 3 else "△" if ov >= 1 else "×"
+        note = f"前回正解7個中 {ov}個を継承"
+    else:
+        g, note = "△", "前回結果が未取得"
+    items.append({"項目": "⑥ 直近の的中軸の継承", "評価": g, "実測": note, "一言": "前回の正解数字を引き継いでいるか"})
+
+    # ⑦ 合計値・奇偶のバランス
+    sums = [sum(_nums(c)) for c in final_picks if _nums(c)]
+    odds = [sum(1 for x in _nums(c) if x % 2) for c in final_picks if _nums(c)]
+    avg_sum = sum(sums) / len(sums) if sums else 0
+    avg_odd = sum(odds) / len(odds) if odds else 0
+    ok_sum = 120 <= avg_sum <= 160
+    ok_odd = 2.5 <= avg_odd <= 4.5
+    g = "◎" if ok_sum and ok_odd else "○" if ok_sum or ok_odd else "△"
+    items.append({"項目": "⑦ 合計値・奇偶のバランス", "評価": g, "実測": f"平均合計 {avg_sum:.0f}／平均奇数 {avg_odd:.1f}個", "一言": "極端な合計・奇偶に偏っていないか"})
+
+    return items
+
 # 🚀 【進化7】占い × ロト7 の橋渡し（偏り対策：別管理＋日付ごと＋控えめ反映）
 def save_fortune_lucky(nums, user=""):
     """占いが出した今日のラッキーナンバーをシート『占いラッキー』に保存（同じ日付＋同じ利用者は置き換え）。"""
@@ -2200,12 +2282,25 @@ elif st.session_state.menu == "最終予測決定":
                         st.caption("🔎 数字バランス（各数字が何口に出たか・上位）：" + ", ".join(f"{n}×{ct}" for n, ct in _bal.most_common(12)))
                         st.caption(("💰 キャリーオーバー狙いON｜" if decide_carryover else "") + f"大穴の口：{_ooana_n}/{len(final_picks)}　｜　観点(レンズ)の内訳：" + ", ".join(f"{k}×{v}" for k, v in _lens_bal.most_common()))
 
+                        # 🧮 総合評価スコアカード（7項目・実測で◎○△×を判定。AIの感想ではなく事実）
+                        _tnum = re.findall(r'\d+', str(t_round_decide_str))
+                        prev_actual = actual_numbers_for_round(df_real, f"第{int(_tnum[0]) - 1}回") if _tnum else set()
+                        scorecard = evaluate_formation(final_picks, df_real, int(ooana_target), prev_actual)
+                        sc_md = "#### 🧮 総合評価スコアカード（7項目／実測）\n\n| 項目 | 評価 | 実測 | 見るポイント |\n|---|:--:|---|---|\n" + "\n".join(f"| {it['項目']} | **{it['評価']}** | {it['実測']} | {it['一言']} |" for it in scorecard)
+                        st.markdown(sc_md)
+                        _gcount = Counter(it['評価'] for it in scorecard)
+                        st.caption("内訳： " + " ／ ".join(f"{g}×{_gcount.get(g, 0)}" for g in ["◎", "○", "△", "×"]) + "（◎○が多いほど全体バランス良好。△×の項目は下のレポートで改善策を確認）")
+                        scorecard_text = "\n".join(f"{it['項目']}：{it['評価']}（{it['実測']}）" for it in scorecard)
+
                         ai_prompt = "\n".join([f"[{r.get('実行者','')} | レンズ:{r.get('予測ロジック','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI予知:{r.get('AI直感','')}] " + ",".join([str(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1)]) for r in final_picks])
 
                         past_lessons = get_recent_lessons()
                         co_note = ("【今回はキャリーオーバー週】高額繰越のため、当たった時の“分け前”を最大化する大穴（人気回避＝高数字32〜37を多く含む口）を重く評価し、その狙いを講評に明記せよ。ただし当選確率自体は変わらない事実は踏まえること。\n" if decide_carryover else "")
                         prompt = f"""ユーザーからの特別作戦指示: "{user_instruction}"
 {co_note}
+【システムが実測で出した総合評価スコアカード（◎○△×）。この評価は“事実”なので否定せず必ずこの通りに受け止め、レポート冒頭にこのスコアカードの要約（各項目の評価と一言）を置き、△と×の項目には具体的な改善策を示すこと】
+{scorecard_text}
+
 【過去の反省会で得た学び（必ず踏まえ、同じ失敗を繰り返さず改善せよ）】
 {past_lessons if past_lessons else "（まだ蓄積された学びはありません）"}
 
