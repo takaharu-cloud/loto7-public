@@ -2163,6 +2163,18 @@ elif st.session_state.menu == "最終予測決定":
     buy_count = c2.radio("購入口数を選択", [10, 20, 30], index=1, horizontal=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # 📦 この回の積み上げ内訳（誰が何口積んだか）を事前表示＝夫婦そろって入っているか一目で分かる
+    _round_df = df_note[df_note["対象回号"] == t_round_decide_str] if (not df_note.empty and "対象回号" in df_note.columns) else pd.DataFrame()
+    if not _round_df.empty and "実行者" in _round_df.columns:
+        _bk = _round_df["実行者"].astype(str).value_counts()
+        _bkstr = "／".join(f"{op} {cnt}口" for op, cnt in _bk.items())
+        st.info(f"📦 **{t_round_decide_str} の積み上げ：合計 {len(_round_df)}口**（内訳：{_bkstr}）。両方の名前が出ていれば夫婦そろって反映されます。")
+        _missing = [nm for nm in [u1_name, u2_name] if nm not in set(_bk.index.astype(str))]
+        if _missing:
+            st.warning("⚠ この回にまだ積み上げが無い人：**" + "／".join(_missing) + "**（この人の予測は最終決定に入りません）。その人が『🌍 予測積上げ』で“本日の実行者”を自分の名前にして積み上げてください。")
+    elif not _round_df.empty:
+        st.info(f"📦 {t_round_decide_str} の積み上げ：合計 {len(_round_df)}口。")
+
     # 💰 キャリーオーバー検出：積み上げ時に💰をONにしていれば自動でON。手動でも切替可。
     _co_round = df_note[df_note["対象回号"] == t_round_decide_str] if (not df_note.empty and "対象回号" in df_note.columns) else pd.DataFrame()
     auto_co = False
