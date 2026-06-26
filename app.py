@@ -2143,15 +2143,15 @@ elif st.session_state.menu == "最終予測決定":
         value=bool(auto_co),
         help="繰越の大きい週にON。積み上げ時に💰をONにしていれば自動でON。AIの講評が大穴重視の語り口になります。大穴を“何口入れるか”は下の数で決めます（当選確率自体は変わりません）。",
     )
-    _default_ooana = 6 if decide_carryover else 4
+    _default_ooana = 4
     ooana_target = st.number_input(
         "そのうち『大穴（人気回避・高数字32〜37）』を何口入れる？（残りは2〜4等も狙えるようバランス重視）",
         min_value=0, max_value=int(buy_count), value=int(min(_default_ooana, buy_count)), step=1,
-        help="例：20口で『4』にすると、大穴4口＋バランス16口。『0』にすると大穴の強制確保なし。大穴＝みんなが買わない高い数字(32〜37)が多い口で、当たれば分け前が大きい狙いです。",
+        help="例：20口で『4』にすると、大穴4口＋バランス16口。多すぎると高数字に偏るので4前後が目安。『0』にすると大穴の強制確保なし。",
     )
     use_latest_stack = st.checkbox(
-        "🆕 最新の積み上げだけで決定する（古い積み上げを除外＝偏り防止・推奨）", value=True,
-        help="各実行者の“最新の積み上げ日”の口だけで決定します。偏り対策を入れる前の古い口（特定数字に固定されがち）を自動で除外。記録は消えません（『データを見る』には残ります）。古い分まで全部使いたい時だけOFFに。",
+        "🆕 最新の積み上げ“1日分だけ”で決定する（OFF＝毎日積み上げた分を全部使う）", value=False,
+        help="OFF（既定）＝あなたと奥さんが毎日積み上げた分を全部使って決定します（選択肢が多いほど偏りも抑えやすい）。ONにすると各人の最新の1日分だけに絞ります（古い形式の口を切り離したい時用）。記録はどちらでも消えません。",
     )
 
     # AIへの指示は『完全自律』に固定（5択の選択は廃止）。口数を選んでボタンを押すだけ。
@@ -2221,7 +2221,7 @@ elif st.session_state.menu == "最終予測決定":
                         limit_dupe_start = max(2, int(buy_count / 5))
                         limit_dupe_end = max(2, int(buy_count / 5))
                         usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 2)  # 各数字の出現上限（偏り防止・均等+2程度）
-                        cap_ladder = [usage_cap, usage_cap + 3, usage_cap + 6, 999]
+                        cap_ladder = [usage_cap, usage_cap + 1, usage_cap + 2, usage_cap + 4, 999]  # 数字上限はできるだけ守る（ゆるやかに緩める）
 
                         def _try_add(c, cap):
                             if len(final_picks) >= buy_count: return False
@@ -2266,15 +2266,17 @@ elif st.session_state.menu == "最終予測決定":
                                 _try_add(c, cap)
                             if len(final_picks) >= buy_count: break
 
-                        # ④ それでも足りなければ制約を外して充足（大穴以外を優先して埋める）
+                        # ④ それでも足りなければ充足。ただし数字上限はできるだけ守る（緩める段階を踏む）
                         if len(final_picks) < buy_count:
-                            for prefer_non_ooana in (True, False):
+                            for relax in [usage_cap + 4, usage_cap + 8, 999]:
                                 for c in target_list:
                                     if len(final_picks) >= buy_count: break
                                     key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
                                     if key in chosen_keys: continue
-                                    if prefer_non_ooana and _is_ooana(c): continue
+                                    nums = _nums_of(c)
+                                    if any(num_usage[n] >= relax for n in nums): continue
                                     final_picks.append(c); chosen_keys.add(key)
+                                    for n in nums: num_usage[n] += 1
                                 if len(final_picks) >= buy_count: break
 
                         # 偏りチェック＆“何の要素が入ったか”を表示
