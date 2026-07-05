@@ -638,6 +638,77 @@ def site_consensus_from_log(target_round, top=10):
         nums += list(seen)  # 同じサイト内の重複は1票に
     return Counter(nums).most_common(top)
 
+def generate_holistic_candidates(df_real, target_round_str, n=110):
+    """積み上げに縛られず、全体の数字×これまでの実績×運気を“総合判断”した候補口を生成する（最終決定用）。
+    積み上げの良い口は、この候補と一緒に競わせることでそのまま最終選定に活きる。各口は帯域バランス済み。"""
+    nums_list = list(range(1, LOTO_MAX_NUM + 1))
+    # ① 実績（過去頻度）＝土台
+    number_counts = Counter()
+    if df_real is not None and not df_real.empty:
+        for i in range(1, LOTO_PICK_COUNT + 1):
+            for v in df_real.get(f"数字{i}", []):
+                if pd.notna(v) and str(v).isdigit():
+                    number_counts[int(v)] += 1
+    # ② 出目理論・実績・運気
+    try: carry_nums, slide_nums = lens_carry_slide(df_real)
+    except Exception: carry_nums, slide_nums = [], []
+    unpop = set(lens_unpopular_numbers())
+    try: trusted = get_trusted_site_numbers(df_real, target_round_str) or {}
+    except Exception: trusted = {}
+    try: fortune = set(get_today_fortune_numbers() or [])
+    except Exception: fortune = set()
+    try: consensus = set(x for x, _ in site_consensus_from_log(target_round_str, top=10))
+    except Exception: consensus = set()
+    ausp_good = set()
+    try:
+        _today = datetime.now(JST).date()
+        _draw = _today + timedelta(days=((4 - _today.weekday()) % 7))  # 次の金曜（抽選日）
+        _lbl, _ag = lens_auspicious_day(_draw)
+        ausp_good = set(_ag or [])
+    except Exception:
+        ausp_good = set()
+    # ③ 総合ウェイト（1〜37すべてに、実績を土台に運気を上乗せ）
+    weights = []
+    for nn in nums_list:
+        w = number_counts.get(nn, 1)                       # 実績（過去頻度）＝土台
+        if nn in carry_nums: w += 8                         # 引っ張り
+        if nn in slide_nums: w += 5                         # スライド
+        if nn in unpop: w += 4                              # 大穴（人間の欲）
+        if nn in trusted: w += int(trusted.get(nn, 0) * 4)  # 当たっている他サイト
+        if nn in consensus: w += 4                          # みんなの共通数字
+        if nn in fortune: w += 5                            # 占い（運気）
+        if nn in ausp_good: w += 4                          # 縁起日（運気）
+        weights.append(max(1, w))
+    # ④ 帯域バランスで n 口生成
+    cands = []
+    su = Counter()
+    scap = max(5, round(30 * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 2)
+    def _band(x): return (x - 1) // 10
+    for k in range(n):
+        if k % 30 == 0: su = Counter()
+        p = []
+        tries = 0
+        while len(p) < LOTO_PICK_COUNT and tries < 400:
+            ch = random.choices(nums_list, weights=weights, k=1)[0]
+            if ch not in p and su[ch] < scap and sum(1 for y in p if _band(y) == _band(ch)) < 3:
+                p.append(ch)
+            tries += 1
+        while len(p) < LOTO_PICK_COUNT:
+            cc = [x for x in nums_list if x not in p and su[x] < scap and sum(1 for y in p if _band(y) == _band(x)) < 3] \
+                 or [x for x in nums_list if x not in p and su[x] < scap] \
+                 or [x for x in nums_list if x not in p]
+            mn = min(su[x] for x in cc)
+            p.append(random.choice([x for x in cc if su[x] == mn]))
+        p = sorted(p)
+        for x in p: su[x] += 1
+        d = {"実行者": "総合判断AI", "口数": "-", "予測ロジック": "総合判断(全体×実績×運気)",
+             "社会情勢": "", "霊的要素": "", "AI直感": "", "祈り/夢": "",
+             "実績点数": int(sum(weights[x - 1] for x in p)), "AIの助言": "未照合"}
+        for j, x in enumerate(p, 1):
+            d[f"数字{j}"] = str(x).zfill(2)
+        cands.append(d)
+    return cands
+
 def rate_ticket(nums, lens):
     """1口(7数字)の“個別バランス”を◎○△で評価。
     大穴(人気回避)は高数字寄せが狙いなので○以上。通常口は帯域の散らばりで判定（1帯域に固まりすぎ=△）。"""
@@ -2220,8 +2291,27 @@ elif st.session_state.menu == "最終予測決定":
                     df_target = df_note[df_note["対象回号"] == t_round_decide_str]
                     if df_target.empty: st.warning(f"指定された回号（{t_round_decide_str}）の予測積み上げデータがありません。先に「日々の予測・積上げ」を実行してください。")
                     else:
-                        st.caption(f"📦 {t_round_decide_str} 用に積み上げた予測 {len(df_target)}口を“全部”使って決定します。")
                         target_list = df_target.to_dict('records')
+                        # ★積み上げに縛られない：全体×これまでの実績×運気で「総合判断」した候補も一緒に競わせる。
+                        #   積み上げの良い口はそのまま活き、足りない観点はAIの総合判断が補う。
+                        try:
+                            holistic = generate_holistic_candidates(df_real, t_round_decide_str, n=110)
+                            # 実績点数の“ものさし”を積み上げと同じ範囲にそろえて公平に競わせる（総合判断だけ極端に強く/弱くならないように）
+                            _sv = []
+                            for c in target_list:
+                                try: _sv.append(float(c.get('実績点数', 0)))
+                                except Exception: pass
+                            if _sv and holistic:
+                                _slo, _shi = min(_sv), max(_sv)
+                                _hv = [float(c['実績点数']) for c in holistic]
+                                _hlo, _hhi = min(_hv), max(_hv)
+                                for c in holistic:
+                                    frac = 0.5 if _hhi == _hlo else (float(c['実績点数']) - _hlo) / (_hhi - _hlo)
+                                    c['実績点数'] = int(_slo + frac * (_shi - _slo))
+                            target_list = target_list + holistic
+                            st.caption(f"📦 {t_round_decide_str}の積み上げ {len(df_target)}口 ＋ 🧠AIの総合判断（全体×実績×運気）{len(holistic)}口 を一緒に競わせ、バランス良く{buy_count}口を厳選します。")
+                        except Exception as _e:
+                            st.caption(f"📦 {t_round_decide_str}の積み上げ {len(df_target)}口から{buy_count}口を厳選します。（総合判断候補の生成はスキップ：{_e}）")
                         
                         # ===== 多角的スコアリング（過去頻度の土台＋気持ち＋大穴ブースト）=====
                         # 大穴（人気回避＝高数字32〜37）は過去に出にくく実績点数が低い→そのままだと最終決定で必ず落ちる。
