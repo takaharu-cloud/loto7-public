@@ -1013,10 +1013,13 @@ def generate_dynamic_quantum_seed(date_str, soc_sensor, spirit_sensor, prayer, g
         if val not in nums: nums.append(val)
     return nums
 
-def get_current_weather_and_pressure():
+@st.cache_data(ttl=900, show_spinner=False)
+def _fetch_current_weather():
+    """今日の天気・気圧をOpen-Meteoから取得（15分キャッシュ＝連打・画面更新でも再取得しない＝429回避）。
+    失敗時は不明を返す（失敗もキャッシュして無駄打ちを防ぐ）。天気は控えめなレンズなので不明でも予測は継続。"""
     try:
         url = "https://api.open-meteo.com/v1/forecast?latitude=26.2124&longitude=127.6809&current=surface_pressure,weather_code&timezone=Asia%2FTokyo"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=8, headers={"User-Agent": "loto7-app/1.0"})
         res.raise_for_status()
         data = res.json()
         code = data.get("current", {}).get("weather_code", 0)
@@ -1027,9 +1030,11 @@ def get_current_weather_and_pressure():
         else: weather = "雨"
         press_str = "高圧" if pressure > 1015 else "低圧" if pressure < 1009 else "通常"
         return weather, press_str
-    except Exception as e: 
-        st.warning(f"現在の気象データの取得に失敗しました。不明な環境として処理します: {e}")
+    except Exception:
         return "不明", "不明"
+
+def get_current_weather_and_pressure():
+    return _fetch_current_weather()
 
 def get_moon_age(y, m, d): 
     return ((date(y, m, d) - date(2000, 1, 6)).days) % 29.530588853
