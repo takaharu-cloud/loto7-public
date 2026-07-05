@@ -2202,7 +2202,7 @@ elif st.session_state.menu == "最終予測決定":
         "締め具合（AIの指摘＝偏り・△口を反映して締める度合い。弱いと言われたら一段上げて“もう一度”押す）",
         ["標準（バランス）", "きつめ（弱点を締める／△口を除外）", "最強（分散最優先）"],
         index=0, horizontal=True,
-        help="標準＝今まで通り。きつめ＝△の口を除外し、同じ数字が出すぎないよう数字上限を一段締める（12・34の集中を抑制）。最強＝過去頻度より分散を最優先（①を◎に）。レポートで弱点を指摘されたら、ここを一段上げてボタンを押し直せば“再々決定”になります。",
+        help="標準＝バランス重視（同じ数字が多くの口に入らないよう既に締めています。例：20口で1数字は最大5口まで＝相関して外れるのを防ぐ）。きつめ＝さらに一段締める＋△の口も除外。最強＝過去頻度より“散らす”を最優先（①を◎に。足りなければ均等な口で補完）。レポートで弱いと言われたら、一段上げて押し直せば“再々決定”になります。",
     )
     spread_first = tighten_level.startswith("最強")
     tight_mode = tighten_level.startswith("きつめ")
@@ -2264,7 +2264,8 @@ elif st.session_state.menu == "最終予測決定":
                         ooana_count = [0]  # 大穴の採用数（_try_add内で更新するためリストで保持）
                         limit_dupe_start = max(2, int(buy_count / 5))
                         limit_dupe_end = max(2, int(buy_count / 5))
-                        usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + (1 if tight_mode else 2))  # きつめは更に一段締める
+                        # 各数字の出現上限（偏り防止）。標準でも同じ数字が多くの口に入らないよう締める＝相関して外れるのを防ぐ。
+                        usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + (0 if tight_mode else 1))
                         cap_ladder = [usage_cap, usage_cap + 1, usage_cap + 2, usage_cap + 4, 999]  # 数字上限はできるだけ守る（ゆるやかに緩める）
 
                         def _try_add(c, cap):
