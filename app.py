@@ -2278,6 +2278,23 @@ elif st.session_state.menu == "最終予測決定":
     spread_first = tighten_level.startswith("最強")
     tight_mode = tighten_level.startswith("きつめ")
 
+    # 🔮 占いの1口（運命枠）：今日のラッキーナンバーを核にした1口を最終決定に必ず入れる
+    _fnums_now = []
+    try:
+        _fnums_now = sorted({int(x) for x in (get_today_fortune_numbers() or []) if 1 <= int(x) <= LOTO_MAX_NUM})
+    except Exception:
+        _fnums_now = []
+    _fc1, _fc2 = st.columns([3, 1])
+    if len(_fnums_now) >= 3:
+        include_fortune_ticket = _fc1.checkbox(
+            f"🔮 占いの1口（今日のラッキーナンバー {_fnums_now}）を必ず入れる", value=True,
+            help="今日のラッキーナンバーを核にした“運命の1口”を、最終決定に必ず1口入れます。まず占いで引いておくと、その番号がこの1口になります。",
+        )
+    else:
+        include_fortune_ticket = False
+        _fc1.caption("🔮 “占いの1口（運命枠）”を入れたい時は、先に占いの館で今日のラッキーナンバーを出しておくと、その1口が最終決定に必ず入ります。")
+    _fc2.button("🔮 占いの館へ", on_click=change_menu, args=("万能AI占い師の館",))
+
     # AIへの指示は『完全自律』に固定（5択の選択は廃止）。口数を選んでボタンを押すだけ。
     user_instruction = "【完全自律】最強の予知科学者として、全次元のデータを統合し最適な10億捕捉陣形を構築せよ"
 
@@ -2347,6 +2364,18 @@ elif st.session_state.menu == "最終予測決定":
 
                         target_list.sort(key=lambda x: x['sort_pts'], reverse=True)
 
+                        # 🔮 占いの1口（運命枠）を先に作る：今日のラッキーナンバーを核に、帯域バランスで7個に整えた1口
+                        fpick = None
+                        if include_fortune_ticket and _fnums_now:
+                            _fp = list(_fnums_now[:LOTO_PICK_COUNT])
+                            while len(_fp) < LOTO_PICK_COUNT:
+                                _cc = [x for x in range(1, LOTO_MAX_NUM + 1) if x not in _fp and sum(1 for y in _fp if (y - 1) // 10 == (x - 1) // 10) < 3] or [x for x in range(1, LOTO_MAX_NUM + 1) if x not in _fp]
+                                _fp.append(random.choice(_cc))
+                            _fp = sorted(_fp)
+                            fpick = {"実行者": "占い🔮", "口数": "-", "予測ロジック": "占いの1口(運命枠)", "社会情勢": "", "霊的要素": "", "AI直感": "", "祈り/夢": "", "実績点数": 0}
+                            for _j, _x in enumerate(_fp, 1):
+                                fpick[f"数字{_j}"] = str(_x).zfill(2)
+
                         # ===== 選定：①大穴を“ちょうど目標数”だけ確保 ②レンズ網羅 ③点数で充足 =====
                         # 大穴は ooana_target 口で打ち止め＝全体が大穴に偏らない（2〜4等も狙える）。
                         final_picks = []
@@ -2378,6 +2407,14 @@ elif st.session_state.menu == "最終予測決定":
                             for n in nums: num_usage[n] += 1
                             if oo: ooana_count[0] += 1
                             return True
+
+                        # 🔮 占いの1口を最優先で確保（必ず1口入れる）
+                        if fpick is not None and len(final_picks) < buy_count:
+                            _fk = tuple(str(fpick[f"数字{i}"]) for i in range(1, LOTO_PICK_COUNT + 1))
+                            if _fk not in chosen_keys:
+                                final_picks.append(fpick); chosen_keys.add(_fk)
+                                used_start_nums.append(fpick['数字1']); used_end_nums.append(fpick[f'数字{LOTO_PICK_COUNT}'])
+                                for _n in _nums_of(fpick): num_usage[_n] += 1
 
                         # ① 大穴を目標数だけ先に確保（点数の高い大穴から）
                         if ooana_target > 0:
@@ -2422,6 +2459,11 @@ elif st.session_state.menu == "最終予測決定":
                             final_picks = []
                             _nu, _ch, _oc = Counter(), set(), [0]
                             _tight = round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 1
+                            # 🔮 占いの1口も最優先で確保
+                            if fpick is not None:
+                                _fk = tuple(str(fpick[f"数字{i}"]) for i in range(1, LOTO_PICK_COUNT + 1))
+                                final_picks.append(fpick); _ch.add(_fk)
+                                for _n in _nums_of(fpick): _nu[_n] += 1
                             def _add_sp(c, cap):
                                 if len(final_picks) >= buy_count: return False
                                 k = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
