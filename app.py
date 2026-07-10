@@ -27,7 +27,7 @@ SIMULATION_LOOP_COUNT = 50000   # シミュレーションのループ回数
 # ==========================================
 # 0. ページ基本設定 & 最強CSS（スマホ無敵化・手打ち完全排除）
 # ==========================================
-st.set_page_config(page_title="ロト7 10億捕捉 予知科学管制システム", page_icon="icon.png", layout="wide")
+st.set_page_config(page_title="ロト7 予知の天文台（多角分析）", page_icon="icon.png", layout="wide")
 
 st.markdown("""
 <style>
@@ -2345,7 +2345,8 @@ elif st.session_state.menu == "最終予測決定":
     # AIへの指示は『完全自律』に固定（5択の選択は廃止）。口数を選んでボタンを押すだけ。
     user_instruction = "【完全自律】最強の予知科学者として、全次元のデータを統合し最適な10億捕捉陣形を構築せよ"
 
-    if st.button(f"🔥 蓄積データから {buy_count}口 を厳選し、超次元AIの絶対的予言レポートを生成", type="primary"):
+    st.caption("※当選確率は上がりません。これは“楽しむための多角分析”です。無理のない範囲で、願いを込めて。")
+    if st.button(f"🔥 蓄積データから {buy_count}口 を厳選し、AIの全方位・忖度ゼロ分析レポートを生成", type="primary"):
         if not api_key: st.error("APIキーが設定されていません。")
         else:
             with st.spinner(f"最強の予知能力を持った科学者（Claude）が10億円を仕留めるための{buy_count}口を厳密に厳選中..."):
@@ -2619,7 +2620,7 @@ elif st.session_state.menu == "最終予測決定":
                             display_cols = ["実行者", "口数"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["社会情勢", "霊的要素", "AI直感", "予測ロジック"]
                             st.dataframe(pd.DataFrame(final_picks)[display_cols])
                             st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                            st.write("▼ 最強予知科学者（Claude）からの絶対的予言レポート")
+                            st.write("▼ AI（Claude）による全方位・忖度ゼロの分析レポート")
                             st.markdown(res_text)
                             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -2651,7 +2652,7 @@ elif st.session_state.menu == "最終予測決定":
                             except Exception as _e:
                                 st.caption(f"（最終買い目の保存はスキップ：{_e}）")
 
-                            st.success("決断内容は『決断記録簿』に強固に保管されました。10億円の引き寄せは完了しました！")
+                            st.success("決断内容を『決断記録簿』に保存しました。良い波長で、願いを込めて🍀（当選確率は変わりません。楽しんでください）")
                             # ★第二のAI(Gemini)用に今回の決断を保持（押した時だけGeminiが動く）
                             st.session_state["last_decision"] = {
                                 "round": t_round_decide_str, "buy_count": buy_count,
