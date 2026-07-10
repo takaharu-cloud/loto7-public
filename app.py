@@ -149,16 +149,22 @@ def _load_sheet_cached(sheet_name):
     保存時に自動でクリアされるので、書き込んだ内容はすぐ反映される。"""
     doc = _get_spreadsheet_doc()
     if doc is None:
-        return pd.DataFrame()
+        raise RuntimeError("スプレッドシート未接続")  # ← 失敗をキャッシュに残さない（次回リトライできる）
     return pd.DataFrame(doc.worksheet(sheet_name).get_all_records())
 
 def load_sheet(sheet_name):
     try:
         return _load_sheet_cached(sheet_name)
     except Exception as e:
+        # 接続/取得の失敗はキャッシュに居座らせない＝再起動しなくても次回つなぎ直せる
+        for _c in (_get_spreadsheet_doc, get_gspread_client):
+            try: _c.clear()
+            except Exception: pass
         msg = str(e)
         if "429" in msg or "Quota" in msg or "quota" in msg:
             st.info(f"📄 データ読込が少し混み合いました（{sheet_name}）。数十秒待つと自動で回復します。記録は無事です。")
+        elif "未接続" in msg:
+            st.warning(f"データベースに一時的につながりませんでした（{sheet_name}）。少し待って再読み込みしてください。記録は無事です。")
         else:
             st.warning(f"シート「{sheet_name}」のデータ取得に失敗しました。通信状況をご確認ください: {e}")
         return pd.DataFrame()
@@ -2033,13 +2039,9 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         # 理論1：完全一致日の数字
                         if n in hot_sync_nums: base_w += 30
                                 
-                        # 理論2：重力ポテンシャル・シフト（引力による数字の浮き沈み）
-                        if m_gravity == "強(極大)":
-                            if recent_counts.get(n, 0) == 0: base_w += 30 
-                            elif recent_counts.get(n, 0) >= 2: base_w = max(1, base_w - 20)
-                        elif m_gravity == "弱":
-                            if recent_counts.get(n, 0) >= 1: base_w += 20
-                                
+                        # 理論2（重力＝「最近出ていない数字はそろそろ来る／出過ぎた数字は下がる」）は
+                        # 統計的根拠が無いギャンブラーの誤謬のため撤去した。各回は独立で、過去の出現は次回に影響しない。
+
                         # 理論3：AI直感への同調
                         if n in ai_intuition_nums: base_w += 50
                             
@@ -2434,7 +2436,7 @@ elif st.session_state.menu == "最終予測決定":
                             key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
                             if key in chosen_keys: return False
                             oo = _is_ooana(c)
-                            if oo and ooana_count[0] >= ooana_target: return False  # 大穴は目標数で打ち止め
+                            if oo and ooana_target > 0 and ooana_count[0] >= ooana_target: return False  # 大穴は目標数で打ち止め（0の時は排除せず自然に混ざる）
                             nums = _nums_of(c)
                             # きつめ：△の口（1帯域に固まりすぎ）は早い段階で除外。最後の緩和(cap大)では許容して必ず充足。
                             if tight_mode and cap <= usage_cap + 1 and not oo and rate_ticket(nums, c.get('予測ロジック', '')) == "△":
@@ -2511,7 +2513,7 @@ elif st.session_state.menu == "最終予測決定":
                                 k = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
                                 if k in _ch: return False
                                 oo = _is_ooana(c)
-                                if oo and _oc[0] >= ooana_target: return False
+                                if oo and ooana_target > 0 and _oc[0] >= ooana_target: return False  # 0の時は大穴を排除しない
                                 nums = _nums_of(c)
                                 if any(_nu[n] >= cap for n in nums): return False
                                 final_picks.append(c); _ch.add(k)
