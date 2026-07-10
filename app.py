@@ -132,23 +132,45 @@ def get_gspread_client():
         st.error(f"データベース連携の認証に失敗しました。Secretsの設定を確認してください: {e}")
         return None
 
-def load_sheet(sheet_name):
+@st.cache_resource(show_spinner=False)
+def _get_spreadsheet_doc():
+    """スプレッドシート本体を開く（1回だけ＝毎回open_by_urlしない）。"""
     client = get_gspread_client()
-    if not client: return pd.DataFrame()
-    try: 
-        return pd.DataFrame(client.open_by_url(st.secrets["SPREADSHEET_URL"]).worksheet(sheet_name).get_all_records())
-    except Exception as e: 
-        st.warning(f"シート「{sheet_name}」のデータ取得に失敗しました。初めての起動か通信状況を確認してください: {e}")
+    if not client:
+        return None
+    try:
+        return client.open_by_url(st.secrets["SPREADSHEET_URL"])
+    except Exception:
+        return None
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_sheet_cached(sheet_name):
+    """シート読込を60秒キャッシュ＝短時間の再描画・連打でGoogle Sheets APIを叩きすぎない（読み取り上限429を回避）。
+    保存時に自動でクリアされるので、書き込んだ内容はすぐ反映される。"""
+    doc = _get_spreadsheet_doc()
+    if doc is None:
+        return pd.DataFrame()
+    return pd.DataFrame(doc.worksheet(sheet_name).get_all_records())
+
+def load_sheet(sheet_name):
+    try:
+        return _load_sheet_cached(sheet_name)
+    except Exception as e:
+        msg = str(e)
+        if "429" in msg or "Quota" in msg or "quota" in msg:
+            st.info(f"📄 データ読込が少し混み合いました（{sheet_name}）。数十秒待つと自動で回復します。記録は無事です。")
+        else:
+            st.warning(f"シート「{sheet_name}」のデータ取得に失敗しました。通信状況をご確認ください: {e}")
         return pd.DataFrame()
 
 def save_sheet(sheet_name, df):
-    client = get_gspread_client()
-    if not client: return False
+    doc = _get_spreadsheet_doc()
+    if doc is None:
+        return False
     try:
-        doc = client.open_by_url(st.secrets["SPREADSHEET_URL"])
-        try: 
+        try:
             worksheet = doc.worksheet(sheet_name)
-        except Exception: 
+        except Exception:
             worksheet = doc.add_worksheet(title=sheet_name, rows="1000", cols="45")
         # 安全装置：空データで既存の記録を全消ししない（通信失敗・誤操作からの全データ消失を防ぐ）
         if df is None or df.empty:
@@ -157,8 +179,12 @@ def save_sheet(sheet_name, df):
         df = df.fillna("").astype(str).replace("nan", "")
         worksheet.clear()
         worksheet.update(values=[df.columns.values.tolist()] + df.values.tolist(), range_name="A1")
+        try:
+            _load_sheet_cached.clear()  # 保存したら読込キャッシュを消す＝次回は最新を読む
+        except Exception:
+            pass
         return True
-    except Exception as e: 
+    except Exception as e:
         st.error(f"シート「{sheet_name}」へのデータ保存に失敗しました: {e}")
         return False
 
