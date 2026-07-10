@@ -467,8 +467,8 @@ def research_predictions_via_web(target_round_label):
         return None, "Claudeのキー（ANTHROPIC_API_KEY）が未設定です。"
 
     tools = [
-        {"type": "web_search_20260209", "name": "web_search"},
-        {"type": "web_fetch_20260209", "name": "web_fetch"},
+        {"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
+        {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 5},
     ]
     prompt = f"""あなたはロト7の予想を横断収集する専門リサーチャーです。
 ウェブ検索を使い、日本のロト7「{target_round_label}」の予想を載せている予想サイト・ブログ・YouTube動画を、主要なもの6〜8件ほど効率的に探してください。
@@ -1501,8 +1501,8 @@ def fetch_latest_loto7_via_web(existing_rounds):
     if client is None:
         return [], "Claudeのキー（ANTHROPIC_API_KEY）が未設定です。"
     tools = [
-        {"type": "web_search_20260209", "name": "web_search"},
-        {"type": "web_fetch_20260209", "name": "web_fetch"},
+        {"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
+        {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 5},
     ]
     prompt = f"""ロト7の最新の当選結果を、みずほ銀行など公式・信頼できる情報源でウェブ検索して確認してください。
 直近3回分について、回号・抽せん日・本数字7個（ボーナス数字は除く）を返します。
@@ -1675,6 +1675,21 @@ def get_week_phase():
 # ==========================================
 # 5. メインUIレンダリング（天才科学者の管制室）
 # ==========================================
+
+# 🔒 アクセス認証：合言葉が無いと“以降を一切実行しない”（勝手にアプリ/AIを使われる＝課金被害を防ぐ最重要の守り）
+APP_PASSWORD = st.secrets.get("APP_PASSWORD", os.environ.get("APP_PASSWORD", ""))
+if APP_PASSWORD and not st.session_state.get("_authed", False):
+    st.markdown("<div class='brand'><div class='crest'>🔒</div><div class='ttl'>ロト7 予知の天文台</div><div class='sub'>家族専用 ・ 合言葉が必要です</div></div>", unsafe_allow_html=True)
+    _pw = st.text_input("合言葉を入力してください", type="password", key="_login_pw")
+    if st.button("入る", type="primary"):
+        if _pw == APP_PASSWORD:
+            st.session_state["_authed"] = True
+            st.rerun()
+        else:
+            st.error("合言葉が違います。")
+    st.caption("※このアプリは公開URLですが、合言葉が無いと中身もAIも一切動きません。")
+    st.stop()  # ← 認証前はここで完全停止（データ表示もAPI呼び出しも実行されない）
+
 if st.session_state.menu != "ホーム":
     st.markdown("<div class='nav-btn'>", unsafe_allow_html=True)
     st.button("総合案内（ホーム）に戻る", on_click=change_menu, args=("ホーム",))
@@ -3120,8 +3135,22 @@ elif st.session_state.menu == "万能AI占い師の館":
                 "『今日』『本日』『今日のラッキーナンバー』などの質問には、必ずこの日付を基準に答えること。"
                 "推測で別の日付を口にしてはならない。"
             )
+            # 💰コスト対策：履歴は直近12メッセージに切り詰め＋過去の画像は毎回送らない（テキスト置換）。青天井の課金を防ぐ。
+            hist = st.session_state[fapi_key][-12:]
+            while hist and hist[0].get("role") != "user":  # 先頭はuserから（Anthropicの規約）
+                hist = hist[1:]
+            trimmed = []
+            for _idx, _m in enumerate(hist):
+                _c = _m.get("content")
+                if isinstance(_c, list) and _idx != len(hist) - 1:  # 最新メッセージ以外は画像を外す
+                    _keep = [_b for _b in _c if not (isinstance(_b, dict) and _b.get("type") == "image")]
+                    if len(_keep) < len(_c):
+                        _keep = _keep + [{"type": "text", "text": "（この時、画像を送付）"}]
+                    trimmed.append({"role": _m.get("role"), "content": _keep if _keep else "（画像を送付）"})
+                else:
+                    trimmed.append(_m)
             try:
-                reply = claude_chat(st.session_state[fapi_key], system=FORTUNE_CHAT_PROMPT + date_ctx, max_tokens=3000)
+                reply = claude_chat(trimmed, system=FORTUNE_CHAT_PROMPT + date_ctx, max_tokens=3000)
                 if not reply:
                     reply = "（波動が少し乱れました。もう一度、ゆっくり話しかけてください）"
             except Exception as e:
