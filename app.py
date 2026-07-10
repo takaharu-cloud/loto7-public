@@ -2297,14 +2297,10 @@ elif st.session_state.menu == "最終予測決定":
         help="口数の約2割が目安（10口→2・20口→4）。多すぎると高い数字に偏ります。『0』にすると大穴の強制確保なし。",
     )
     st.caption("🆕 この回（選んだ回号）に向けて積み上げた予測を“全部”使って決定します。別の回の予測は混ざりません。")
-    tighten_level = st.radio(
-        "締め具合（AIの指摘＝偏り・△口を反映して締める度合い。弱いと言われたら一段上げて“もう一度”押す）",
-        ["標準（バランス）", "きつめ（弱点を締める／△口を除外）", "最強（分散最優先）"],
-        index=0, horizontal=True,
-        help="標準＝バランス重視（同じ数字が多くの口に入らないよう既に締めています。例：20口で1数字は最大5口まで＝相関して外れるのを防ぐ）。きつめ＝さらに一段締める＋△の口も除外。最強＝過去頻度より“散らす”を最優先（①を◎に。足りなければ均等な口で補完）。レポートで弱いと言われたら、一段上げて押し直せば“再々決定”になります。",
-    )
-    spread_first = tighten_level.startswith("最強")
-    tight_mode = tighten_level.startswith("きつめ")
+    st.caption("⚖️ 常に『バランス型』で決定します（同じ数字が多くの口に入らないよう締めていて、偏りを防ぎます）。色々なバランス良い口を出すことが、今後の分析に活きます。")
+    # 締め具合の選択（バランス/弱め/最強）は廃止。常にバランス型に固定。
+    spread_first = False
+    tight_mode = False
 
     # 🔮 占いの1口（運命枠）：今日のラッキーナンバーを核にした1口を最終決定に必ず入れる
     _fnums_now = []
@@ -2617,7 +2613,7 @@ elif st.session_state.menu == "最終予測決定":
                             for x in per_rows:
                                 _nm = [v for v in x["数字"].split(",") if v.strip().isdigit()]
                                 row = {"日時": now_str, "対象回号": t_round_decide_str, "口": x["口"], "レンズ": x["レンズ"],
-                                       "口別評価": x["評価"], "スコアカード": sc_summary, "締め具合": tighten_level}
+                                       "口別評価": x["評価"], "スコアカード": sc_summary, "締め具合": "バランス型"}
                                 for _j in range(LOTO_PICK_COUNT):
                                     row[f"数字{_j+1}"] = (_nm[_j] if _j < len(_nm) else "")
                                 buy_rows.append(row)
