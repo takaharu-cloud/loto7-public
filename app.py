@@ -2288,11 +2288,11 @@ elif st.session_state.menu == "最終予測決定":
         value=bool(auto_co),
         help="繰越の大きい週にON。積み上げ時に💰をONにしていれば自動でON。AIの講評が大穴重視の語り口になります。大穴を“何口入れるか”は下の数で決めます（当選確率自体は変わりません）。",
     )
-    _default_ooana = 4
+    _default_ooana = max(1, round(buy_count / 5))  # 口数に比例（10口→2・20口→4・30口→6＝約2割。高数字への偏りを防ぐ）
     ooana_target = st.number_input(
         "そのうち『大穴（人気回避・高数字32〜37）』を何口入れる？（残りは2〜4等も狙えるようバランス重視）",
         min_value=0, max_value=int(buy_count), value=int(min(_default_ooana, buy_count)), step=1,
-        help="例：20口で『4』にすると、大穴4口＋バランス16口。多すぎると高数字に偏るので4前後が目安。『0』にすると大穴の強制確保なし。",
+        help="口数の約2割が目安（10口→2・20口→4）。多すぎると高い数字に偏ります。『0』にすると大穴の強制確保なし。",
     )
     st.caption("🆕 この回（選んだ回号）に向けて積み上げた予測を“全部”使って決定します。別の回の予測は混ざりません。")
     tighten_level = st.radio(
