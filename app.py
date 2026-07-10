@@ -2249,6 +2249,9 @@ elif st.session_state.menu == "日々の予想・積上げ":
                             row_data[f"数字{j+1}"] = str(item["nums"][j]).zfill(2)
                         new_data.append(row_data)
                     
+                    # 同時書き込み対策：保存直前にキャッシュを消して“最新”を読み直す（妻/自動処理の直近の書き込みを取りこぼさない）
+                    try: _load_sheet_cached.clear()
+                    except Exception: pass
                     df_note = load_sheet("予測ノート")
                     new_df = pd.DataFrame(new_data)
                     # 最新を上に積む（追記・上書きしない）。完全に同一の行だけ重複排除（最新側を残す）。

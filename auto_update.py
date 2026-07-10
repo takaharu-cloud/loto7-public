@@ -47,15 +47,18 @@ def load_sheet(client, name):
 
 
 def save_sheet(client, name, df):
+    # 安全装置：空データで既存の記録を全消ししない（夜間の無人実行でも記録消失を防ぐ最重要ガード）
+    if df is None or df.empty:
+        log(f"⚠ シート「{name}」へ空データを書き込もうとしたため、既存の記録を守り保存を中止しました")
+        return
     doc = client.open_by_url(os.environ["SPREADSHEET_URL"])
     try:
         ws = doc.worksheet(name)
     except Exception:
         ws = doc.add_worksheet(title=name, rows="1000", cols="45")
+    df = df.fillna("").astype(str).replace("nan", "")
     ws.clear()
-    if not df.empty:
-        df = df.fillna("").astype(str).replace("nan", "")
-        ws.update(values=[df.columns.values.tolist()] + df.values.tolist(), range_name="A1")
+    ws.update(values=[df.columns.values.tolist()] + df.values.tolist(), range_name="A1")
 
 
 # ========== 暦・天文（app.pyと同一の純計算） ==========
@@ -165,12 +168,20 @@ def task_backfill(client):
     rows.sort(key=lambda x: x[0], reverse=True)
     dates = [r[1] for r in rows]
     wmap = fetch_tokyo_weather_range(min(dates), max(dates))
+    # 天気取得が失敗/欠けても、既存シートの天気を残す（全消し防止・週次で自然回復）
+    old = load_sheet(client, "実データ")
+    old_w = {}
+    if not old.empty and "抽せん日" in old.columns:
+        for _, r in old.iterrows():
+            old_w[str(r.get("抽せん日", ""))] = (str(r.get("天気", "")), str(r.get("気温", "")), str(r.get("降水", "")), str(r.get("気圧", "")))
     data = []
     for kai, ymd, nums in rows:
         y, mo, da = (int(v) for v in ymd.split("-"))
         dd = date(y, mo, da)
         mp, mt, mg = get_moon_and_tide(y, mo, da)
-        w = wmap.get(ymd, ("", "", "", ""))
+        w = wmap.get(ymd)
+        if not w or not str(w[0]):  # 新規取得が空なら既存の天気を使う
+            w = old_w.get(ymd, ("", "", "", ""))
         row = {"回号": f"第{kai}回", "抽せん日": ymd}
         for i, n in enumerate(nums):
             row[f"数字{i+1}"] = n
