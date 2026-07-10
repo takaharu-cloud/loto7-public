@@ -1424,9 +1424,12 @@ def auto_check_hits(df_note, df_real):
     if "AIの助言" not in df_note.columns: df_note["AIの助言"] = "未照合"
     updated = False
     error_shown = False
+    # 回号は数字だけで照合（第/回/空白/表記ゆれでも取りこぼさない）＝無警告の採点ゼロを防ぐ
+    real_key = df_real["回号"].astype(str).str.replace(r"[^0-9]", "", regex=True) if "回号" in df_real.columns else None
     for idx, row in df_note.iterrows():
         if "的中" in str(row.get("AIの助言", "")) and "等" in str(row.get("AIの助言", "")): continue
-        match = df_real[df_real["回号"] == str(row.get("対象回号", ""))]
+        _tn = re.sub(r"[^0-9]", "", str(row.get("対象回号", "")))
+        match = df_real[real_key == _tn] if (real_key is not None and _tn) else df_real[df_real.get("回号", "") == str(row.get("対象回号", ""))]
         if not match.empty:
             try:
                 actual = set([int(match.iloc[0].get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(match.iloc[0].get(f"数字{i}", "")).isdigit()])

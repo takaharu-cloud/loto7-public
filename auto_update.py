@@ -204,11 +204,14 @@ def task_score(client):
     if "AIの助言" not in df_note.columns:
         df_note["AIの助言"] = "未照合"
     updated = False
+    # 回号は数字だけで照合（表記ゆれでも取りこぼさない）
+    real_key = df_real["回号"].astype(str).str.replace(r"[^0-9]", "", regex=True) if "回号" in df_real.columns else None
     for idx, row in df_note.iterrows():
         adv = str(row.get("AIの助言", ""))
         if "的中" in adv and "等" in adv:
             continue
-        match = df_real[df_real["回号"] == str(row.get("対象回号", ""))]
+        _tn = re.sub(r"[^0-9]", "", str(row.get("対象回号", "")))
+        match = df_real[real_key == _tn] if (real_key is not None and _tn) else df_real.iloc[0:0]
         if match.empty:
             continue
         try:

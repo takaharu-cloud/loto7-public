@@ -6,10 +6,31 @@ on:
     - cron: "0 20 * * 4"
     # 土 09:00 JST（= 土 00:00 UTC）：抽選後に結果取得＋全更新＋採点
     - cron: "0 0 * * 6"
+    # 毎月1日 03:00 UTC：生存維持（60日無操作でActionsが自動停止するのを防ぐ）
+    - cron: "0 3 1 * *"
   workflow_dispatch: {}   # 手動でも実行可能
 
+permissions:
+  contents: write   # keepaliveの自動コミット用
+
 jobs:
+  # 月1回の生存維持：小さなコミットを打ってリポジトリを“活動中”に保つ（Actionsの60日自動停止を回避）
+  keepalive:
+    if: github.event.schedule == '0 3 1 * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: keepalive commit
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/last_keepalive.txt
+          git config user.name "loto7-bot"
+          git config user.email "loto7-bot@users.noreply.github.com"
+          git add .github/last_keepalive.txt
+          git commit -m "chore: keepalive $(date -u +%Y-%m-%d)" || echo "no change"
+          git push || echo "push skipped"
+
   update:
+    if: github.event.schedule != '0 3 1 * *'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
