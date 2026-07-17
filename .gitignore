@@ -14,3 +14,4 @@ __pycache__/
 
 # Claude Code のローカル設定
 .claude/
+app_backup_before_simplify.py

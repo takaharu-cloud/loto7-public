@@ -462,10 +462,7 @@ def main():
             task_score(client)
         except Exception as e:
             errors += 1; log(f"❌ 採点でエラー: {e}")
-        try:
-            task_supervisor_report(client, os.environ.get("ANTHROPIC_API_KEY", ""))
-        except Exception as e:
-            errors += 1; log(f"❌ 総監督レポート生成でエラー: {e}")
+        # 総監督AIレポートは廃止（2026-07-18）：分析はCowork（Claudeとの対話）に一本化。API節約。
     if mode in ("all", "collect"):
         if os.environ.get("ANTHROPIC_API_KEY"):
             try:

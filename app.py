@@ -27,70 +27,82 @@ SIMULATION_LOOP_COUNT = 50000   # シミュレーションのループ回数
 # ==========================================
 # 0. ページ基本設定 & 最強CSS（スマホ無敵化・手打ち完全排除）
 # ==========================================
-st.set_page_config(page_title="ロト7 予知の天文台（多角分析）", page_icon="icon.png", layout="wide")
+st.set_page_config(page_title="ロト7 くがに堂（金運）", page_icon="icon.png", layout="wide")
 
+# ===== 琉球・金運テーマ（土生金＝土が金を生む配色）=====
+# 漆喰ホワイト×砂ベージュ（土）＋ゴールド（金）＋赤瓦テラコッタ（沖縄の土）。
+# 風水根拠：金運色=黄・金、最強の組合せ=黄×ベージュ×金、五行の相生「土生金」。黄は強すぎるためポイント使い。
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600&family=Shippori+Mincho:wght@500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500&display=swap');
     :root{
-        --gold:#D4AF37; --gold-soft:#E8C766; --ink:#ECEAF6; --ink2:#A9A7C4; --line:rgba(212,175,55,0.28);
-        --panel:rgba(255,255,255,0.035);
+        --gold:#B8860B; --gold-deep:#8F6A08; --gold-bright:#D4AF37;
+        --ink:#3A2E1E; --ink2:#8A7A5F;
+        --line:rgba(184,134,11,0.30); --panel:rgba(255,255,255,0.66);
+        --terra:#C0563B; --terra-deep:#A94A32;
+        --shikkui:#FBF7EE; --sand:#F1E8D4;
     }
     .stApp {
         background:
-            radial-gradient(1200px 600px at 82% -12%, #1d2456 0%, rgba(29,36,86,0) 60%),
-            radial-gradient(900px 520px at -5% 105%, #102049 0%, rgba(16,32,73,0) 55%),
-            linear-gradient(165deg,#0A0E27 0%,#0D1230 55%,#0A0E27 100%);
+            radial-gradient(1100px 560px at 85% -10%, rgba(212,175,55,.14) 0%, rgba(212,175,55,0) 55%),
+            radial-gradient(900px 520px at -8% 108%, rgba(192,86,59,.10) 0%, rgba(192,86,59,0) 55%),
+            linear-gradient(165deg,#FBF7EE 0%,#F5EDDB 55%,#F1E8D4 100%);
         color: var(--ink); font-family:'Zen Kaku Gothic New','Helvetica Neue',Arial,sans-serif;
     }
     .stApp:before{ content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
         background-image:
-            radial-gradient(1.4px 1.4px at 18% 28%, rgba(255,255,255,.40), transparent),
-            radial-gradient(1.2px 1.2px at 68% 18%, rgba(255,255,255,.30), transparent),
-            radial-gradient(1.2px 1.2px at 42% 72%, rgba(255,255,255,.22), transparent),
-            radial-gradient(1.4px 1.4px at 86% 58%, rgba(232,199,102,.30), transparent),
-            radial-gradient(1.1px 1.1px at 58% 88%, rgba(255,255,255,.22), transparent); }
+            radial-gradient(1.6px 1.6px at 18% 26%, rgba(184,134,11,.30), transparent),
+            radial-gradient(1.3px 1.3px at 68% 16%, rgba(212,175,55,.34), transparent),
+            radial-gradient(1.2px 1.2px at 42% 70%, rgba(184,134,11,.20), transparent),
+            radial-gradient(1.6px 1.6px at 88% 55%, rgba(212,175,55,.30), transparent),
+            radial-gradient(1.1px 1.1px at 58% 90%, rgba(169,74,50,.18), transparent); }
     [data-testid="stHeader"]{ background:transparent; }
     .block-container{ position:relative; z-index:1; }
-    h1,h2,h3,h4 { font-family:'Shippori Mincho',serif; color:var(--gold-soft); font-weight:600; letter-spacing:.02em; }
-    h1 { font-size:28px; border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:18px; }
+    h1,h2,h3,h4 { font-family:'Shippori Mincho',serif; color:var(--gold-deep); font-weight:600; letter-spacing:.02em; }
+    h1 { font-size:28px; border-bottom:2px solid var(--line); padding-bottom:10px; margin-bottom:18px; }
+    p, li, label, .stMarkdown { color:var(--ink); }
     .stButton>button {
-        width:100%; background:rgba(212,175,55,0.06); color:var(--gold-soft);
-        border:1px solid var(--line); border-radius:12px; padding:13px 16px; font-weight:500; font-size:15px;
+        width:100%; background:linear-gradient(160deg,#FFFDF7,#F7EFDD); color:var(--gold-deep);
+        border:1px solid var(--line); border-radius:14px; padding:13px 16px; font-weight:600; font-size:15px;
         font-family:'Zen Kaku Gothic New',sans-serif; transition:.25s;
+        box-shadow:0 2px 8px rgba(184,134,11,.10);
     }
-    .stButton>button:hover { background:rgba(212,175,55,0.16); border-color:var(--gold); color:#FFF;
-        box-shadow:0 0 18px rgba(212,175,55,.22); transform:translateY(-1px); }
-    .info-box { background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--gold);
+    .stButton>button:hover { background:linear-gradient(160deg,#FFF9E8,#F5E9C9); border-color:var(--gold-bright);
+        color:var(--terra-deep); box-shadow:0 4px 16px rgba(212,175,55,.28); transform:translateY(-1px); }
+    .info-box { background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--gold-bright);
         border-radius:12px; padding:18px 20px; margin-bottom:18px; font-size:15px; line-height:1.8; color:var(--ink); }
-    .analysis-box { background:rgba(10,14,39,0.55); border:1px solid var(--line); border-radius:12px;
+    .analysis-box { background:rgba(255,255,255,.72); border:1px solid var(--line); border-radius:12px;
         padding:20px; margin-bottom:18px; color:var(--ink); }
     .radio-box { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:15px; margin-bottom:15px; }
     .person-select { background:var(--panel); border:1px solid var(--line); padding:15px; border-radius:12px; text-align:center; margin-bottom:20px; }
-    /* ===== 神秘・宇宙 ダッシュボード ===== */
-    .brand{ text-align:center; padding:6px 0 2px; }
-    .brand .crest{ color:var(--gold); font-size:20px; letter-spacing:.6em; }
-    .brand .ttl{ font-family:'Shippori Mincho',serif; font-size:32px; color:var(--gold-soft); margin:4px 0 2px;
-        text-shadow:0 0 26px rgba(212,175,55,.28); }
-    .brand .sub{ color:var(--ink2); font-size:12px; letter-spacing:.32em; }
+    /* ===== くがに堂 ダッシュボード ===== */
+    .brand{ text-align:center; padding:8px 0 2px; }
+    .brand .crest{ color:var(--terra); font-size:18px; letter-spacing:.6em; }
+    .brand .ttl{ font-family:'Shippori Mincho',serif; font-size:32px; color:var(--gold-deep); margin:4px 0 2px;
+        text-shadow:0 1px 0 #FFF, 0 0 22px rgba(212,175,55,.35); }
+    .brand .sub{ color:var(--ink2); font-size:12px; letter-spacing:.30em; }
     .week{ display:flex; justify-content:space-between; gap:6px; margin:16px 0 4px; }
     .wn{ flex:1; text-align:center; padding:11px 3px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
     .wn .d{ font-family:'Shippori Mincho',serif; font-size:17px; color:var(--ink2); }
     .wn .a{ font-size:10.5px; color:var(--ink2); margin-top:3px; line-height:1.3; }
-    .wn.active{ background:rgba(212,175,55,.14); border-color:var(--gold); box-shadow:0 0 20px rgba(212,175,55,.22); }
-    .wn.active .d, .wn.active .a{ color:var(--gold-soft); }
+    .wn.active{ background:linear-gradient(160deg,#FFF6DC,#F9E9BC); border-color:var(--gold-bright);
+        box-shadow:0 3px 14px rgba(212,175,55,.30); }
+    .wn.active .d{ color:var(--terra-deep); } .wn.active .a{ color:var(--gold-deep); }
     .reset-note{ text-align:center; color:var(--ink2); font-size:11.5px; margin:2px 0 14px; letter-spacing:.12em; }
-    .mission{ background:linear-gradient(135deg, rgba(212,175,55,.12), rgba(255,255,255,.03));
-        border:1px solid var(--gold); border-radius:16px; padding:20px 24px; margin:4px 0 12px;
-        box-shadow:0 0 30px rgba(212,175,55,.12); }
-    .mission .lbl{ color:var(--gold); font-size:11px; letter-spacing:.3em; }
-    .mission .mt{ font-family:'Shippori Mincho',serif; font-size:23px; color:var(--gold-soft); margin:6px 0 6px; }
-    .mission .ds{ color:var(--ink2); font-size:13.5px; line-height:1.7; }
+    .mission{ background:linear-gradient(135deg,#FFF8E4,#FBF3DE);
+        border:1px solid var(--gold-bright); border-left:6px solid var(--terra); border-radius:16px;
+        padding:20px 24px; margin:4px 0 12px; box-shadow:0 4px 22px rgba(184,134,11,.14); }
+    .mission .lbl{ color:var(--terra); font-size:11px; letter-spacing:.3em; }
+    .mission .mt{ font-family:'Shippori Mincho',serif; font-size:23px; color:var(--gold-deep); margin:6px 0 6px; }
+    .mission .ds{ color:var(--ink); font-size:13.5px; line-height:1.7; }
     .stats{ display:flex; gap:10px; margin:14px 0 6px; }
-    .stat{ flex:1; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 8px; text-align:center; }
-    .stat .v{ font-family:'Cormorant Garamond',serif; font-size:25px; color:var(--gold-soft); }
+    .stat{ flex:1; background:var(--panel); border:1px solid var(--line); border-bottom:3px solid var(--gold-bright);
+        border-radius:12px; padding:12px 8px; text-align:center; }
+    .stat .v{ font-family:'Cormorant Garamond',serif; font-size:25px; color:var(--terra-deep); }
     .stat .k{ color:var(--ink2); font-size:10.5px; letter-spacing:.18em; }
-    .sec-label{ color:var(--gold); font-size:11.5px; letter-spacing:.26em; margin:14px 0 6px; }
+    .sec-label{ color:var(--terra); font-size:11.5px; letter-spacing:.26em; margin:14px 0 6px; }
+    .cowork-note{ background:linear-gradient(160deg,#FFF9E8,#F7EFDD); border:1px dashed var(--gold-bright);
+        border-radius:12px; padding:14px 18px; margin:12px 0; font-size:14px; color:var(--ink); line-height:1.7; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1664,19 +1676,19 @@ def get_week_phase():
     wd = now.weekday()  # 月=0 ... 日=6
     after_draw = (wd == 4 and (now.hour, now.minute) >= (19, 30))  # 金曜の抽選後
     # 表示用：土→日→月→火→水→木→金
-    days = [("土", "答合せ・積上げ", 5), ("日", "積み上げ", 6), ("月", "積み上げ", 0),
-            ("火", "積み上げ", 1), ("水", "積み上げ", 2), ("木", "最終チェック", 3), ("金", "決定・抽選", 4)]
+    days = [("土", "結果確認", 5), ("日", "積み上げ", 6), ("月", "積み上げ", 0),
+            ("火", "積み上げ", 1), ("水", "積み上げ", 2), ("木", "ゆっくり", 3), ("金", "分析・購入", 4)]
     missions = {
-        5: ("答え合わせを“見る”だけ（採点は自動済み）", "土の朝に、結果取得・採点・総監督レポートは自動で完了しています。押さなくて大丈夫。結果と振り返りを見て、よければ来週の積み上げを始めましょう。", "総監督レポートを見る", "総監督レポート"),
+        5: ("結果を見るだけ（採点は自動済み）", "結果取得と採点は朝に自動で完了しています。当たりを確かめて、気が向いたら来週の積み上げを。", "結果を確認する", "最新データ取得"),
         6: ("予測の積み上げ（任意・楽しむ用）", "今日の気持ちを言葉にして積み上げます。毎日でなくてOK。", "予測を積み上げる", "日々の予想・積上げ"),
         0: ("積み上げを重ねる（任意）", "気が向いたら、今日の気持ちを核に予測を厚くします。", "予測を積み上げる", "日々の予想・積上げ"),
-        1: ("積み上げ ＆ 占いで波長チェック（任意）", "積み上げつつ、占いの館で今週の波長も。全部お好みで。", "予測を積み上げる", "日々の予想・積上げ"),
+        1: ("積み上げの日（任意）", "今日の気持ちをひと言残して積み上げ。無理のない範囲で。", "予測を積み上げる", "日々の予想・積上げ"),
         2: ("積み上げを継続（任意）", "ぶれずに毎日の波長を重ねます。無理のない範囲で。", "予測を積み上げる", "日々の予想・積上げ"),
-        3: ("明日は勝負の金曜。今日はゆっくりでOK", "他サイト収集は明日の朝に“自動”で走ります。今日は構えを見るだけで大丈夫。", "総監督レポートを見る", "総監督レポート"),
-        4: ("★最終決定 → 購入（朝6〜8時）★ ここだけ要・あなた", "全方位の分析から本日の勝負手を確定し、朝のうちに購入を。買えるのはあなただけ＝ここが唯一の“必須”です。", "最終決定レポートを出す", "最終予測決定"),
+        3: ("明日は金曜。今日はゆっくりでOK", "他サイトの予想収集は明日の朝に“自動”で走ります。今日は何もしなくて大丈夫。", "予測を積み上げる", "日々の予想・積上げ"),
+        4: ("★金曜：Claudeと分析 → 購入（朝6〜8時）★", "Claude（Cowork）を開いて「ロト7の続きから」と言うだけ。一緒に統計を分析して買い目を決め、朝のうちに購入を。ここだけがあなたの出番です。", "今日の積み上げ（任意）", "日々の予想・積上げ"),
     }
     if after_draw:
-        mission = ("答え合わせは自動で進みます（見るだけでOK）", "抽選おつかれさまです。結果取得・採点・総監督レポートは自動で済みます。気が向いたら結果と振り返りを見てください。飲み会でも大丈夫。", "総監督レポートを見る", "総監督レポート")
+        mission = ("抽選おつかれさまです（あとは自動）", "結果取得と採点は明日の朝に自動で済みます。今夜はゆっくり。飲み会でも大丈夫。", "結果を確認する", "最新データ取得")
     else:
         mission = missions[wd]
     return wd, after_draw, days, mission
@@ -1688,7 +1700,7 @@ def get_week_phase():
 # 🔒 アクセス認証：合言葉が無いと“以降を一切実行しない”（勝手にアプリ/AIを使われる＝課金被害を防ぐ最重要の守り）
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", os.environ.get("APP_PASSWORD", ""))
 if APP_PASSWORD and not st.session_state.get("_authed", False):
-    st.markdown("<div class='brand'><div class='crest'>🔒</div><div class='ttl'>ロト7 予知の天文台</div><div class='sub'>家族専用 ・ 合言葉が必要です</div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='brand'><div class='crest'>🔒</div><div class='ttl'>ロト7 くがに堂</div><div class='sub'>家族専用 ・ 合言葉が必要です</div></div>", unsafe_allow_html=True)
     _pw = st.text_input("合言葉を入力してください", type="password", key="_login_pw")
     if st.button("入る", type="primary"):
         if _pw == APP_PASSWORD:
@@ -1712,9 +1724,9 @@ if st.session_state.menu == "ホーム":
 
     # ブランドヘッダー
     st.markdown(
-        "<div class='brand'><div class='crest'>✦ ✦ ✦</div>"
-        "<div class='ttl'>ロト7 予知の天文台</div>"
-        "<div class='sub'>ALL-DIRECTION FORECAST OBSERVATORY</div></div>",
+        "<div class='brand'><div class='crest'>◆ ◆ ◆</div>"
+        "<div class='ttl'>ロト7 くがに堂</div>"
+        "<div class='sub'>くがに＝沖縄の言葉で“黄金” ・ 土生金の金運の間</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -1723,7 +1735,7 @@ if st.session_state.menu == "ホーム":
         f"<div class='wn{(' active' if dnum == wd else '')}'><div class='d'>{label}</div><div class='a'>{action}</div></div>"
         for label, action, dnum in days
     )
-    st.markdown(f"<div class='week'>{nodes}</div><div class='reset-note'>― 金の抽選後〜土に「答え合わせ＆振り返り」／土〜木に「積み上げ」 ―</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='week'>{nodes}</div><div class='reset-note'>― 土〜木＝積み上げ（任意）／金＝Claudeと分析→購入 ―</div>", unsafe_allow_html=True)
 
     # 今日のミッション
     st.markdown(
@@ -1732,7 +1744,7 @@ if st.session_state.menu == "ホーム":
         unsafe_allow_html=True,
     )
     st.button(f"▶ {mission[2]}", on_click=change_menu, args=(mission[3],))
-    st.caption("🤖 結果取得・採点・他サイト収集・週次レポートは全部“自動”です（何も押さなくてOK）。あなたの出番は【積み上げ＝任意・楽しむ用】と【金曜の最終決定＆購入】だけ。上のミッションは“やらないと壊れる指示”ではなく、ただの道しるべです。")
+    st.caption("🤖 結果取得・採点・他サイト収集は全部“自動”です。あなたの出番は【積み上げ＝任意】と【金曜：Claudeと分析→購入】だけ。")
 
     # ステータス
     df_real = load_sheet("実データ")
@@ -1748,23 +1760,14 @@ if st.session_state.menu == "ホーム":
         unsafe_allow_html=True,
     )
 
-    # メニュー
-    st.markdown("<div class='sec-label'>― 管制メニュー ―</div>", unsafe_allow_html=True)
-    st.button("📋 今週の総監督レポート（全体を把握）", on_click=change_menu, args=("総監督レポート",))
-    st.write("")
+    # メニュー（シンプル2ボタン）
+    st.markdown("<div class='sec-label'>― メニュー ―</div>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
-        st.button("📡 最新データ取得（結果・採点・他サイト）", on_click=change_menu, args=("最新データ取得",))
-        st.write("")
-        st.button("🌍 全方位の量子環境分析＆予測積上げ", on_click=change_menu, args=("日々の予想・積上げ",))
+        st.button("🌍 予測の積み上げ（今日の気持ち）", on_click=change_menu, args=("日々の予想・積上げ",))
     with c2:
-        st.button("🎯 最終決定（10億捕捉の包囲網）", on_click=change_menu, args=("最終予測決定",))
-        st.write("")
-        st.button("🔄 答え合わせと辛口の反省会（PDCA）", on_click=change_menu, args=("結果発表と振り返り",))
-        st.write("")
-        st.button("🔮 万能AI占い師の館", on_click=change_menu, args=("万能AI占い師の館",))
-        st.write("")
-        st.button("📋 データを見る（記録の確認）", on_click=change_menu, args=("データを見る",))
+        st.button("📡 結果確認（当選番号と採点）", on_click=change_menu, args=("最新データ取得",))
+    st.markdown("<div class='cowork-note'>💬 <b>金曜の分析はClaudeで</b> ― Coworkを開いて「ロト7の続きから」と言うだけ。統計を一緒に見て買い目を決めます。</div>", unsafe_allow_html=True)
 
     if get_gspread_client() is None:
         st.error("データベース接続設定（Secrets）が未完了です。")
@@ -1777,8 +1780,31 @@ if st.session_state.menu == "ホーム":
             st.caption("画像を表示できませんでした。")
 
 elif st.session_state.menu == "最新データ取得":
-    st.title("📡 最新データ取得")
-    st.caption("結果の取得元：ohtashp.com（公式みずほは自動取得をブロックするため）。取得できない時はClaudeのウェブ検索で自動補完します。")
+    st.title("📡 結果確認")
+    st.caption("結果の取得・採点は毎週土曜の朝に自動で済んでいます。ここでは最新の当選番号と、あなたの予測の採点を確認できます。")
+
+    # 最新の当選番号と自分の採点（見るだけ）
+    _dfr = load_sheet("実データ")
+    if not _dfr.empty and "回号" in _dfr.columns:
+        _last = _dfr.iloc[0]
+        _win = [str(_last.get(f"数字{i}", "")) for i in range(1, LOTO_PICK_COUNT + 1)]
+        st.markdown(
+            f"<div class='mission'><div class='lbl'>最新の当選番号 ・ {_last.get('回号','')}（{_last.get('抽せん日','')}）</div>"
+            f"<div class='mt'>{'　'.join(_win)}</div></div>", unsafe_allow_html=True)
+        _dfn = load_sheet("予測ノート")
+        if not _dfn.empty and "対象回号" in _dfn.columns:
+            _mine = _dfn[_dfn["対象回号"].astype(str) == str(_last.get("回号", ""))]
+            if not _mine.empty and "AIの助言" in _mine.columns:
+                _hits = _mine["AIの助言"].astype(str).str.extract(r"(\d+)個的中")[0].dropna().astype(int)
+                if not _hits.empty:
+                    _best = int(_hits.max())
+                    _grade = "🎉 5等以上！" if _best >= 4 else ("惜しい！" if _best == 3 else "次へ")
+                    st.markdown(f"**あなたの最高：{_best}個的中**（{len(_mine)}口中）{_grade}")
+                _show = ["AIの助言", "実行者"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["予測ロジック"]
+                st.dataframe(_mine[[c for c in _show if c in _mine.columns]], height=280, use_container_width=True)
+
+    st.markdown("---")
+    st.caption("👇 自動より先に確認したい時だけ、手動で取り込めます（普段は不要）。")
     if st.button("データ同期および自動採点を実行する"):
         with st.spinner("通信中...最新の当選結果を解析し、予想と照合しています..."):
             try:
@@ -1830,94 +1856,6 @@ elif st.session_state.menu == "最新データ取得":
             show_cols = ["回号", "抽せん日"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["天気", "気温", "気圧"]
             st.dataframe(df_full[[c for c in show_cols if c in df_full.columns]].head(20))
 
-    st.markdown("---")
-    st.markdown("### 🏅 他サイト予想：収集・成績ランキング・自動反映（API節約）")
-    st.markdown("<div class='info-box'>各サイトの予想を<b>成績ログ</b>に蓄積し、抽選後に採点して<b>『どこが当たっているか』のランキング</b>を作ります。成績上位サイトの予想は、積み上げ時に<b>精度に応じて自動で重み付け反映</b>されます。<br>・<b>節約モード（推奨）</b>：スプレッドシートの『予想サイトURL』シート（A1=URL, A2〜に常連サイトURL）を直接取得＋Haikuで抽出（最安）。<br>・<b>発掘モード</b>：Claudeのウェブ検索で新しいサイトを探す（コスト高め・たまに使う）。</div>", unsafe_allow_html=True)
-    with st.expander("🆕 はじめに：予想サイトURLシートを作成＆おすすめサイトを登録", expanded=False):
-        st.caption("『予想サイトURL』シートを自動作成し、私が動作確認したおすすめ無料予想サイト7件を登録します。あとからスプレッドシートで自由に追加・削除できます。")
-        SEED_PREDICTION_URLS = [
-            "https://www.lotolab.com/loto7/prediction/",
-            "https://umiduki.net/loto7/yosou/",
-            "https://loto7-yosou.info/yosou/yosoku.php",
-            "https://loto7.money-plan.net/guess/",
-            "https://simple-yosou.com/loto7/yosou.html",
-            "https://blog.umasaku.com/loto7top/",
-            "https://loto2num-yosou.com/loto7/yosou.html",
-        ]
-        if st.button("📝 予想サイトURLシートを作成しておすすめ7件を登録する"):
-            if save_sheet("予想サイトURL", pd.DataFrame({"URL": SEED_PREDICTION_URLS})):
-                st.success("『予想サイトURL』シートを作成し、おすすめ7サイトを登録しました。『📋 節約モードで収集』が使えます。")
-            else:
-                st.error("シート作成に失敗しました。データベース接続（Secrets）をご確認ください。")
-
-    df_real0 = load_sheet("実データ")
-    next_round, _ = get_next_round_info(df_real0)
-    rounds_for_search = [f"第{next_round + i}回" for i in range(-3, 3)]
-    target_round_label = st.selectbox("どの回号の予想を集めますか？", rounds_for_search, index=rounds_for_search.index(f"第{next_round}回") if f"第{next_round}回" in rounds_for_search else 0)
-
-    ccol1, ccol2, ccol3 = st.columns(3)
-    if ccol1.button("📋 節約モードで収集", use_container_width=True):
-        with st.spinner("登録サイトを直接巡回し、予想数字を抽出しています（Haiku・低コスト）..."):
-            df_collected, err = collect_other_site_predictions()
-        if err:
-            st.warning(err)
-        else:
-            log_site_predictions(df_collected, target_round_label)
-            st.success(f"{len(df_collected)}件を収集し、成績ログに記録しました（{target_round_label}）。")
-            st.dataframe(df_collected)
-            render_other_site_analysis(df_collected, target_round_label)
-
-    if ccol2.button("🌐 発掘モード（検索）", use_container_width=True):
-        with st.spinner("Claudeがウェブを検索し、予想サイト・YouTubeを横断収集しています（30秒〜1分）..."):
-            df_collected, err = research_predictions_via_web(target_round_label)
-        if err:
-            st.warning(err)
-        else:
-            log_site_predictions(df_collected, target_round_label)
-            st.success(f"{len(df_collected)}件のソースから収集し、成績ログにも記録しました（{target_round_label}）。")
-            st.dataframe(df_collected)
-            render_other_site_analysis(df_collected, target_round_label)
-
-    if ccol3.button("🏅 成績ランキング", use_container_width=True):
-        board = compute_site_leaderboard(load_sheet("実データ"))
-        if not board:
-            st.info("まだ採点できる履歴がありません。『収集』→ 抽選後に『最新データ取得（採点）』を重ねると、当たっているサイトが分かってきます。")
-        else:
-            st.markdown("#### 🏅 予想サイト成績ランキング（平均的中・採点回数）")
-            st.dataframe(pd.DataFrame(board))
-            top = board[0]
-            st.success(f"現在の最有力：「{top['ソース']}」＝平均 {top['平均的中']} 個的中（{top['採点回数']}回採点）。積み上げ時、上位サイトの予想を精度に応じて自動反映します。")
-
-    if st.button("📊 収集済みデータで横断分析する"):
-        render_other_site_analysis(load_sheet("他サイト予想"), target_round_label)
-
-    # ✍️ 手入力（自動収集が不安定な時の“確実な”データ源）＋ みんなの共通数字（コンセンサス）
-    with st.expander("✍️ 他サイトの予想を手で入力する（確実・コンセンサス＆ランキングの材料）", expanded=False):
-        st.caption("予想サイトを見て、サイト名と予想数字（7個）を入れて『追加』。ここに入れた分は確実に『みんなの共通数字（コンセンサス）』と『サイト精度ランキング』に反映されます。抽選後に採点され、どのサイトが当たっているか分かってきます。")
-        mi1, mi2 = st.columns([1, 2])
-        site_name = mi1.text_input("サイト名（例：ロトラボ）", key="manual_site_name")
-        nums_text = mi2.text_input(f"予想数字（{LOTO_PICK_COUNT}個・カンマや空白区切り）例：3 9 14 21 28 33 36", key="manual_site_nums")
-        if st.button("➕ この予想を追加（成績ログに記録）"):
-            picked = sorted(dict.fromkeys(int(x) for x in re.findall(r'\d+', nums_text) if 1 <= int(x) <= LOTO_MAX_NUM))
-            if not site_name.strip():
-                st.warning("サイト名を入れてください。")
-            elif len(picked) < LOTO_PICK_COUNT:
-                st.warning(f"数字が{len(picked)}個でした。1〜{LOTO_MAX_NUM}の数字を{LOTO_PICK_COUNT}個入れてください。")
-            else:
-                one = pd.DataFrame([{"ソース": site_name.strip()[:60], "予想数字": ", ".join(str(n) for n in picked[:LOTO_PICK_COUNT])}])
-                log_site_predictions(one, target_round_label)
-                df_log2 = load_sheet("予想成績ログ")
-                cur = df_log2[df_log2["対象回号"].astype(str) == str(target_round_label)] if (not df_log2.empty and "対象回号" in df_log2.columns) else pd.DataFrame()
-                if not cur.empty:
-                    save_sheet("他サイト予想", cur[["ソース", "予想数字"]].reset_index(drop=True))
-                st.success(f"「{site_name.strip()}」の予想 {picked[:LOTO_PICK_COUNT]} を {target_round_label} に記録しました。")
-        cons = site_consensus_from_log(target_round_label, top=12)
-        if cons:
-            st.info(f"🤝 {target_round_label} の『みんなの共通数字（コンセンサス）』： " + ", ".join(f"{n}（{c}サイト）" for n, c in cons))
-            st.caption(f"→ 共通して多い数字：{sorted([n for n, _ in cons])}。これは積み上げの『他サイト総意』レンズにも自動で使われます。")
-        else:
-            st.caption("まだこの回の他サイト予想がありません。上で1件でも入れると、共通数字が出ます。")
-
 elif st.session_state.menu == "日々の予想・積上げ":
     st.title("🌍 地球規模の量子環境分析＆日々の予測積上げ")
     st.markdown("<div class='info-box'>明日、来週、その先へ。人間のバイアスを完全に破壊し、その日の宇宙の波動（動的量子シード）と物理演算（隣接波及効果）を融合させて真理の30口を積み上げます。</div>", unsafe_allow_html=True)
@@ -1941,7 +1879,7 @@ elif st.session_state.menu == "日々の予想・積上げ":
             height=150
         )
 
-        use_fortune = st.checkbox("🔮 今日の占いのラッキーナンバーを軽く加味する（偏り防止のため控えめウェイト・任意）", value=False, help="『万能AI占い師の館』で『🎯今日の占いナンバーをロト7へ渡す』を押して保存した数字を、控えめに加点します。")
+        use_fortune = st.checkbox("🔮 保存済みのラッキーナンバーを軽く加味する（控えめウェイト・任意）", value=False, help="シート『占いラッキー』に保存された数字を控えめに加点します（金曜のClaude分析で更新できます）。")
 
         gen_mode = st.radio(
             "🧪 生成モード",
@@ -2269,1144 +2207,4 @@ elif st.session_state.menu == "日々の予想・積上げ":
                     save_sheet("予測ノート", df_note)
                     st.success(f"固定バイアスを完全排除し、動的量子シードと物理演算を駆使して、{target_round_str}に向けて最強の{len(top30)}口を積み上げました。（担当: {operator}）")
 
-elif st.session_state.menu == "最終予測決定":
-    st.title("🎯 最終決断！10億捕捉の超次元包囲網編成")
-    st.write("日々積み上げた膨大な量子観測ノートから、天才科学者AIが全体を俯瞰し、10億円を射抜くための最強陣形を厳選。その根拠を壮大かつ論理的に解説します。")
-    
-    df_note = load_sheet("予測ノート")
-    df_real = load_sheet("実データ")
-    auto_round, _ = get_next_round_info(df_real)
-    
-    # ★手打ち入力排除：予測ノートから対象回号のプルダウンを自動生成
-    available_rounds = [f"第{auto_round + i}回" for i in range(-5, 5) if auto_round + i > 0]
-    if not df_note.empty and "対象回号" in df_note.columns:
-        note_rounds = df_note["対象回号"].unique().tolist()
-        available_rounds = sorted(list(set(available_rounds + note_rounds)), key=lambda x: int(re.findall(r'\d+', x)[0]) if re.findall(r'\d+', x) else 0, reverse=True)
-    
-    st.markdown("<div class='radio-box'>", unsafe_allow_html=True)
-    c1, c2 = st.columns([1, 2])
-    default_round = f"第{auto_round}回"  # 常に最新（次に買う回）を初期選択に
-    t_round_decide_str = c1.selectbox("決断を下す回号", available_rounds,
-                                      index=available_rounds.index(default_round) if default_round in available_rounds else 0)
-    buy_count = c2.radio("購入口数を選択", [10, 20, 30], index=1, horizontal=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # 📦 この回の積み上げ内訳（誰が何口積んだか）を事前表示＝夫婦そろって入っているか一目で分かる
-    _round_df = df_note[df_note["対象回号"] == t_round_decide_str] if (not df_note.empty and "対象回号" in df_note.columns) else pd.DataFrame()
-    if not _round_df.empty and "実行者" in _round_df.columns:
-        _bk = _round_df["実行者"].astype(str).value_counts()
-        _bkstr = "／".join(f"{op} {cnt}口" for op, cnt in _bk.items())
-        st.info(f"📦 **{t_round_decide_str} の積み上げ：合計 {len(_round_df)}口**（内訳：{_bkstr}）。両方の名前が出ていれば夫婦そろって反映されます。")
-        _missing = [nm for nm in [u1_name, u2_name] if nm not in set(_bk.index.astype(str))]
-        if _missing:
-            st.warning("⚠ この回にまだ積み上げが無い人：**" + "／".join(_missing) + "**（この人の予測は最終決定に入りません）。その人が『🌍 予測積上げ』で“本日の実行者”を自分の名前にして積み上げてください。")
-    elif not _round_df.empty:
-        st.info(f"📦 {t_round_decide_str} の積み上げ：合計 {len(_round_df)}口。")
-
-    # 💰 キャリーオーバー検出：積み上げ時に💰をONにしていれば自動でON。手動でも切替可。
-    _co_round = df_note[df_note["対象回号"] == t_round_decide_str] if (not df_note.empty and "対象回号" in df_note.columns) else pd.DataFrame()
-    auto_co = False
-    if not _co_round.empty and "キャリーオーバー" in _co_round.columns:
-        auto_co = _co_round["キャリーオーバー"].astype(str).str.contains("YES").any()
-    decide_carryover = st.checkbox(
-        "💰 今回はキャリーオーバー週（AIに『分け前最大化』を意識させる）",
-        value=bool(auto_co),
-        help="繰越の大きい週にON。積み上げ時に💰をONにしていれば自動でON。AIの講評が大穴重視の語り口になります。大穴を“何口入れるか”は下の数で決めます（当選確率自体は変わりません）。",
-    )
-    _default_ooana = max(1, round(buy_count / 5))  # 口数に比例（10口→2・20口→4・30口→6＝約2割。高数字への偏りを防ぐ）
-    ooana_target = st.number_input(
-        "そのうち『大穴（人気回避・高数字32〜37）』を何口入れる？（残りは2〜4等も狙えるようバランス重視）",
-        min_value=0, max_value=int(buy_count), value=int(min(_default_ooana, buy_count)), step=1,
-        help="口数の約2割が目安（10口→2・20口→4）。多すぎると高い数字に偏ります。『0』にすると大穴の強制確保なし。",
-    )
-    st.caption("🆕 この回（選んだ回号）に向けて積み上げた予測を“全部”使って決定します。別の回の予測は混ざりません。")
-    st.caption("⚖️ 常に『バランス型』で決定します（同じ数字が多くの口に入らないよう締めていて、偏りを防ぎます）。色々なバランス良い口を出すことが、今後の分析に活きます。")
-    # 締め具合の選択（バランス/弱め/最強）は廃止。常にバランス型に固定。
-    spread_first = False
-    tight_mode = False
-
-    # 🔮 占いの1口（運命枠）：今日のラッキーナンバーを核にした1口を最終決定に必ず入れる
-    _fnums_now = []
-    try:
-        _fnums_now = sorted({int(x) for x in (get_today_fortune_numbers() or []) if 1 <= int(x) <= LOTO_MAX_NUM})
-    except Exception:
-        _fnums_now = []
-    _fc1, _fc2 = st.columns([3, 1])
-    if len(_fnums_now) >= 3:
-        include_fortune_ticket = _fc1.checkbox(
-            f"🔮 占いの1口（今日のラッキーナンバー {_fnums_now}）を必ず入れる", value=True,
-            help="今日のラッキーナンバーを核にした“運命の1口”を、最終決定に必ず1口入れます。まず占いで引いておくと、その番号がこの1口になります。",
-        )
-    else:
-        include_fortune_ticket = False
-        _fc1.caption("🔮 “占いの1口（運命枠）”を入れたい時は、先に占いの館で今日のラッキーナンバーを出しておくと、その1口が最終決定に必ず入ります。")
-    _fc2.button("🔮 占いの館へ", on_click=change_menu, args=("万能AI占い師の館",))
-
-    # AIへの指示は『完全自律』に固定（5択の選択は廃止）。口数を選んでボタンを押すだけ。
-    user_instruction = "【完全自律】最強の予知科学者として、全次元のデータを統合し最適な10億捕捉陣形を構築せよ"
-
-    st.caption("※当選確率は上がりません。これは“楽しむための多角分析”です。無理のない範囲で、願いを込めて。")
-    if st.button(f"🔥 蓄積データから {buy_count}口 を厳選し、AIの全方位・忖度ゼロ分析レポートを生成", type="primary"):
-        if not api_key: st.error("APIキーが設定されていません。")
-        else:
-            with st.spinner(f"最強の予知能力を持った科学者（Claude）が10億円を仕留めるための{buy_count}口を厳密に厳選中..."):
-                if df_note.empty: st.error("予測データがありません。")
-                else:
-                    # この回（対象回号）に向けて積み上げた予測だけを使う（他の回は対象回号が違うので自動的に混ざらない）
-                    df_target = df_note[df_note["対象回号"] == t_round_decide_str]
-                    if df_target.empty: st.warning(f"指定された回号（{t_round_decide_str}）の予測積み上げデータがありません。先に「日々の予測・積上げ」を実行してください。")
-                    else:
-                        target_list = df_target.to_dict('records')
-                        # ★積み上げに縛られない：全体×これまでの実績×運気で「総合判断」した候補も一緒に競わせる。
-                        #   積み上げの良い口はそのまま活き、足りない観点はAIの総合判断が補う。
-                        try:
-                            holistic = generate_holistic_candidates(df_real, t_round_decide_str, n=110)
-                            # 実績点数の“ものさし”を積み上げと同じ範囲にそろえて公平に競わせる（総合判断だけ極端に強く/弱くならないように）
-                            _sv = []
-                            for c in target_list:
-                                try: _sv.append(float(c.get('実績点数', 0)))
-                                except Exception: pass
-                            if _sv and holistic:
-                                _slo, _shi = min(_sv), max(_sv)
-                                _hv = [float(c['実績点数']) for c in holistic]
-                                _hlo, _hhi = min(_hv), max(_hv)
-                                for c in holistic:
-                                    frac = 0.5 if _hhi == _hlo else (float(c['実績点数']) - _hlo) / (_hhi - _hlo)
-                                    c['実績点数'] = int(_slo + frac * (_shi - _slo))
-                            target_list = target_list + holistic
-                            st.caption(f"📦 {t_round_decide_str}の積み上げ {len(df_target)}口 ＋ 🧠AIの総合判断（全体×実績×運気）{len(holistic)}口 を一緒に競わせ、バランス良く{buy_count}口を厳選します。")
-                        except Exception as _e:
-                            st.caption(f"📦 {t_round_decide_str}の積み上げ {len(df_target)}口から{buy_count}口を厳選します。（総合判断候補の生成はスキップ：{_e}）")
-                        
-                        # ===== 多角的スコアリング（過去頻度の土台＋気持ち＋大穴ブースト）=====
-                        # 大穴（人気回避＝高数字32〜37）は過去に出にくく実績点数が低い→そのままだと最終決定で必ず落ちる。
-                        # 大穴の点数を底上げして“逆風”を打ち消す。キャリーオーバー週は特に厚く。
-                        unpop_set = set(lens_unpopular_numbers())  # 32〜37
-
-                        def _nums_of(c):
-                            return [int(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(c.get(f"数字{i}")).isdigit()]
-
-                        def _is_ooana(c):
-                            high_cnt = sum(1 for n in _nums_of(c) if n in unpop_set)
-                            return ("人気回避" in str(c.get('予測ロジック',''))) or (high_cnt >= 3)
-
-                        error_shown = False
-                        for c in target_list:
-                            try:
-                                pts = int(float(c.get('実績点数', 0)))
-                            except Exception as e:
-                                pts = 0
-                                if not error_shown:
-                                    st.warning(f"実績点数の読み取りに失敗したため、0点として計算しました: {e}")
-                                    error_shown = True
-
-                            # 気持ち（祈り/夢）の後押し
-                            if any(k in str(c.get('祈り/夢','')) for k in ["平和", "笑顔", "自由", "住宅", "結婚式", "感謝"]): pts += 50
-
-                            # 大穴ブースト（過去頻度の逆風を打ち消す程度。口数は下の上限で制御するので控えめ）
-                            high_cnt = sum(1 for n in _nums_of(c) if n in unpop_set)
-                            if _is_ooana(c):
-                                pts += (70 if decide_carryover else 40) + high_cnt * 4
-
-                            c['sort_pts'] = pts + random.randint(0, 50)
-
-                        target_list.sort(key=lambda x: x['sort_pts'], reverse=True)
-
-                        # 🔮 占いの1口（運命枠）を先に作る：今日のラッキーナンバーを核に、帯域バランスで7個に整えた1口
-                        fpick = None
-                        if include_fortune_ticket and _fnums_now:
-                            _fp = list(_fnums_now[:LOTO_PICK_COUNT])
-                            while len(_fp) < LOTO_PICK_COUNT:
-                                _cc = [x for x in range(1, LOTO_MAX_NUM + 1) if x not in _fp and sum(1 for y in _fp if (y - 1) // 10 == (x - 1) // 10) < 3] or [x for x in range(1, LOTO_MAX_NUM + 1) if x not in _fp]
-                                _fp.append(random.choice(_cc))
-                            _fp = sorted(_fp)
-                            fpick = {"実行者": "占い🔮", "口数": "-", "予測ロジック": "占いの1口(運命枠)", "社会情勢": "", "霊的要素": "", "AI直感": "", "祈り/夢": "", "実績点数": 0}
-                            for _j, _x in enumerate(_fp, 1):
-                                fpick[f"数字{_j}"] = str(_x).zfill(2)
-
-                        # ===== 選定：①大穴を“ちょうど目標数”だけ確保 ②レンズ網羅 ③点数で充足 =====
-                        # 大穴は ooana_target 口で打ち止め＝全体が大穴に偏らない（2〜4等も狙える）。
-                        final_picks = []
-                        used_start_nums, used_end_nums, num_usage, chosen_keys = [], [], Counter(), set()
-                        ooana_count = [0]  # 大穴の採用数（_try_add内で更新するためリストで保持）
-                        limit_dupe_start = max(2, int(buy_count / 5))
-                        limit_dupe_end = max(2, int(buy_count / 5))
-                        # 各数字の出現上限（偏り防止）。標準でも同じ数字が多くの口に入らないよう締める＝相関して外れるのを防ぐ。
-                        usage_cap = max(3, round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + (0 if tight_mode else 1))
-                        cap_ladder = [usage_cap, usage_cap + 1, usage_cap + 2, usage_cap + 4, 999]  # 数字上限はできるだけ守る（ゆるやかに緩める）
-
-                        def _try_add(c, cap):
-                            if len(final_picks) >= buy_count: return False
-                            key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
-                            if key in chosen_keys: return False
-                            oo = _is_ooana(c)
-                            if oo and ooana_target > 0 and ooana_count[0] >= ooana_target: return False  # 大穴は目標数で打ち止め（0の時は排除せず自然に混ざる）
-                            nums = _nums_of(c)
-                            # きつめ：△の口（1帯域に固まりすぎ）は早い段階で除外。最後の緩和(cap大)では許容して必ず充足。
-                            if tight_mode and cap <= usage_cap + 1 and not oo and rate_ticket(nums, c.get('予測ロジック', '')) == "△":
-                                return False
-                            s = c.get('数字1'); e = c.get(f'数字{LOTO_PICK_COUNT}')
-                            if used_start_nums.count(s) >= limit_dupe_start: return False
-                            if used_end_nums.count(e) >= limit_dupe_end: return False
-                            if any(num_usage[n] >= cap for n in nums): return False
-                            if any(len(set(nums) & set(_nums_of(u))) >= 4 for u in final_picks): return False
-                            final_picks.append(c); chosen_keys.add(key)
-                            used_start_nums.append(s); used_end_nums.append(e)
-                            for n in nums: num_usage[n] += 1
-                            if oo: ooana_count[0] += 1
-                            return True
-
-                        # 🔮 占いの1口を最優先で確保（必ず1口入れる）
-                        if fpick is not None and len(final_picks) < buy_count:
-                            _fk = tuple(str(fpick[f"数字{i}"]) for i in range(1, LOTO_PICK_COUNT + 1))
-                            if _fk not in chosen_keys:
-                                final_picks.append(fpick); chosen_keys.add(_fk)
-                                used_start_nums.append(fpick['数字1']); used_end_nums.append(fpick[f'数字{LOTO_PICK_COUNT}'])
-                                for _n in _nums_of(fpick): num_usage[_n] += 1
-
-                        # ① 大穴を目標数だけ先に確保（点数の高い大穴から）
-                        if ooana_target > 0:
-                            for cap in cap_ladder:
-                                for c in target_list:
-                                    if ooana_count[0] >= ooana_target or len(final_picks) >= buy_count: break
-                                    if _is_ooana(c): _try_add(c, cap)
-                                if ooana_count[0] >= ooana_target or len(final_picks) >= buy_count: break
-
-                        # ② レンズ網羅：できるだけ多くの“観点（予測ロジック）”を1口ずつ取り込む
-                        seen_lens = set(str(c.get('予測ロジック','')) for c in final_picks)
-                        for cap in cap_ladder:
-                            for c in target_list:
-                                if len(final_picks) >= buy_count: break
-                                lg = str(c.get('予測ロジック',''))
-                                if lg in seen_lens: continue
-                                if _try_add(c, cap): seen_lens.add(lg)
-                            if len(final_picks) >= buy_count: break
-
-                        # ③ 残りは点数の高い順で充足（土台＝過去頻度を活かす。大穴は目標数で止まる）
-                        for cap in cap_ladder:
-                            for c in target_list:
-                                if len(final_picks) >= buy_count: break
-                                _try_add(c, cap)
-                            if len(final_picks) >= buy_count: break
-
-                        # ④ それでも足りなければ充足。ただし数字上限はできるだけ守る（緩める段階を踏む）
-                        if len(final_picks) < buy_count:
-                            for relax in [usage_cap + 4, usage_cap + 8, 999]:
-                                for c in target_list:
-                                    if len(final_picks) >= buy_count: break
-                                    key = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
-                                    if key in chosen_keys: continue
-                                    nums = _nums_of(c)
-                                    if any(num_usage[n] >= relax for n in nums): continue
-                                    final_picks.append(c); chosen_keys.add(key)
-                                    for n in nums: num_usage[n] += 1
-                                if len(final_picks) >= buy_count: break
-
-                        # 🎯 分散最優先モード：偏りを最小化（過去頻度より分散を優先）。大穴とレンズ網羅は維持。
-                        if spread_first:
-                            final_picks = []
-                            _nu, _ch, _oc = Counter(), set(), [0]
-                            _tight = round(buy_count * LOTO_PICK_COUNT / LOTO_MAX_NUM) + 1
-                            # 🔮 占いの1口も最優先で確保
-                            if fpick is not None:
-                                _fk = tuple(str(fpick[f"数字{i}"]) for i in range(1, LOTO_PICK_COUNT + 1))
-                                final_picks.append(fpick); _ch.add(_fk)
-                                for _n in _nums_of(fpick): _nu[_n] += 1
-                            def _add_sp(c, cap):
-                                if len(final_picks) >= buy_count: return False
-                                k = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
-                                if k in _ch: return False
-                                oo = _is_ooana(c)
-                                if oo and ooana_target > 0 and _oc[0] >= ooana_target: return False  # 0の時は大穴を排除しない
-                                nums = _nums_of(c)
-                                if any(_nu[n] >= cap for n in nums): return False
-                                final_picks.append(c); _ch.add(k)
-                                for n in nums: _nu[n] += 1
-                                if oo: _oc[0] += 1
-                                return True
-                            if ooana_target > 0:
-                                for cap in [_tight, _tight + 1, 999]:
-                                    for c in target_list:
-                                        if _oc[0] >= ooana_target or len(final_picks) >= buy_count: break
-                                        if _is_ooana(c): _add_sp(c, cap)
-                                    if _oc[0] >= ooana_target: break
-                            _seen = set(str(c.get('予測ロジック', '')) for c in final_picks)
-                            for cap in [_tight, _tight + 1]:
-                                for c in target_list:
-                                    if len(final_picks) >= buy_count: break
-                                    lg = str(c.get('予測ロジック', ''))
-                                    if lg in _seen: continue
-                                    if _add_sp(c, cap): _seen.add(lg)
-                            _guard = 0
-                            while len(final_picks) < buy_count and _guard < 2000:
-                                _guard += 1
-                                _best, _bs = None, -1
-                                for c in target_list:
-                                    k = tuple(str(c.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1))
-                                    if k in _ch: continue
-                                    nums = _nums_of(c)
-                                    if any(_nu[n] >= _tight for n in nums): continue
-                                    sc = sum(1 for n in nums if _nu[n] == 0) * 2 + sum(1 for n in nums if _nu[n] <= 1)
-                                    if sc > _bs: _bs, _best = sc, (c, k, nums)
-                                if _best:
-                                    c, k, nums = _best
-                                    final_picks.append(c); _ch.add(k)
-                                    for n in nums: _nu[n] += 1
-                                else:
-                                    _cand = sorted(sorted(range(1, LOTO_MAX_NUM + 1), key=lambda n: (_nu[n], random.random()))[:10])
-                                    _pick = sorted(random.sample(_cand, LOTO_PICK_COUNT))
-                                    k = tuple(str(n).zfill(2) for n in _pick)
-                                    if k in _ch: continue
-                                    _syn = {"実行者": "システム(分散補完)", "口数": "-", "社会情勢": "", "霊的要素": "", "AI直感": "", "予測ロジック": "分散補完"}
-                                    for i, n in enumerate(_pick, 1): _syn[f"数字{i}"] = str(n).zfill(2)
-                                    final_picks.append(_syn); _ch.add(k)
-                                    for n in _pick: _nu[n] += 1
-
-                        # 偏りチェック＆“何の要素が入ったか”を表示
-                        _bal = Counter(n for c in final_picks for n in _nums_of(c))
-                        _lens_bal = Counter(str(c.get('予測ロジック','?')) for c in final_picks)
-                        _ooana_n = sum(1 for c in final_picks if _is_ooana(c))
-                        st.caption("🔎 数字バランス（各数字が何口に出たか・上位）：" + ", ".join(f"{n}×{ct}" for n, ct in _bal.most_common(12)))
-                        st.caption(("💰 キャリーオーバー狙いON｜" if decide_carryover else "") + f"大穴の口：{_ooana_n}/{len(final_picks)}　｜　観点(レンズ)の内訳：" + ", ".join(f"{k}×{v}" for k, v in _lens_bal.most_common()))
-
-                        # 🧮 総合評価スコアカード（7項目・実測で◎○△×を判定。AIの感想ではなく事実）
-                        _tnum = re.findall(r'\d+', str(t_round_decide_str))
-                        prev_actual = actual_numbers_for_round(df_real, f"第{int(_tnum[0]) - 1}回") if _tnum else set()
-                        scorecard = evaluate_formation(final_picks, df_real, int(ooana_target), prev_actual)
-                        sc_md = "#### 🧮 総合評価スコアカード（7項目／実測）\n\n| 項目 | 評価 | 実測 | 見るポイント |\n|---|:--:|---|---|\n" + "\n".join(f"| {it['項目']} | **{it['評価']}** | {it['実測']} | {it['一言']} |" for it in scorecard)
-                        st.markdown(sc_md)
-                        _gcount = Counter(it['評価'] for it in scorecard)
-                        st.caption("内訳： " + " ／ ".join(f"{g}×{_gcount.get(g, 0)}" for g in ["◎", "○", "△", "×"]) + "（◎○が多いほど全体バランス良好。△×の項目は下のレポートで改善策を確認）")
-                        scorecard_text = "\n".join(f"{it['項目']}：{it['評価']}（{it['実測']}）" for it in scorecard)
-
-                        # 🧾 口別の個別バランス評価（◎○△・実測）。最低○を目標。
-                        per_rows = []
-                        for _i, _r in enumerate(final_picks, 1):
-                            _nm = _nums_of(_r)
-                            per_rows.append({"口": _i, "レンズ": str(_r.get("予測ロジック", "")),
-                                             "数字": ",".join(str(n).zfill(2) for n in _nm),
-                                             "評価": rate_ticket(_nm, _r.get("予測ロジック", ""))})
-                        _pc = Counter(x["評価"] for x in per_rows)
-                        st.markdown("#### 🧾 口別バランス評価（各口が個別に散らばっているか・実測）")
-                        st.caption("内訳： " + " ／ ".join(f"{g}×{_pc.get(g, 0)}" for g in ["◎", "○", "△"]) + "（△＝1帯域に固まりすぎ。最低○が目標。大穴は高数字寄せOK）")
-                        st.dataframe(pd.DataFrame(per_rows), use_container_width=True, height=320)
-                        per_text = "\n".join(f"口{x['口']}({x['レンズ']}): {x['評価']} [{x['数字']}]" for x in per_rows)
-
-                        ai_prompt = "\n".join([f"[{r.get('実行者','')} | レンズ:{r.get('予測ロジック','')} | 社会:{r.get('社会情勢','')} | 霊的:{r.get('霊的要素','')} | AI予知:{r.get('AI直感','')}] " + ",".join([str(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1)]) for r in final_picks])
-
-                        past_lessons = get_recent_lessons()
-                        co_note = ("【今回はキャリーオーバー週】高額繰越のため、当たった時の“分け前”を最大化する大穴（人気回避＝高数字32〜37を多く含む口）を重く評価し、その狙いを講評に明記せよ。ただし当選確率自体は変わらない事実は踏まえること。\n" if decide_carryover else "")
-                        prompt = f"""ユーザーからの特別作戦指示: "{user_instruction}"
-{co_note}
-【システムが実測で出した総合評価スコアカード（◎○△×）。この評価は“事実”なので否定せず必ずこの通りに受け止め、レポート冒頭にこのスコアカードの要約（各項目の評価と一言）を置き、△と×の項目には具体的な改善策を示すこと】
-{scorecard_text}
-
-【各口の個別バランス評価（◎○△・実測。最低○が目標）。各口の講評はこの評価を正として行い、△の口があればその理由（どの帯域に固まっているか）と改善を述べること】
-{per_text}
-
-【正直さの厳命（必ず守れ）】(1)心理状態・天気・台風・月齢などと「当選」の相関は、サンプルが小さく統計的根拠が無い。これらを“当たる根拠”として断定するな（気持ちの持ち方として触れるのは可。ただし必ず『統計的な裏付けは無い』と明記）。(2)【最重要】ロト7は毎回“独立”。前回の正解数字も前回の反省（例：20番台を強化・特定数字を継承）も、次回を1ミリも予言しない。**各口を「前回正解を何個継承したか」「前回の反省を反映したか」で評価することを固く禁じる。前回に引っ張られた講評は誤り**。(3)過去の学びは『偏りを避ける・広く散らす・規律を守る・特定数字に依存しない』等の“一般的な習慣”としてのみ使い、特定の数字・帯域を追う根拠にするな。(4)誇大な断定（必ず当たる等）は禁止。バランス（広く散らす）こそ意味のある守り。
-
-【過去の学び（“一般的な習慣”としてのみ参考に。特定の数字・帯域の追いかけには使わないこと）】
-{past_lessons if past_lessons else "（まだ蓄積された学びはありません）"}
-
-【システムが積み上げから厳選した{buy_count}口（各口に「レンズ＝どの観点で選んだか」と実行者の「その日の気持ち」が記録されています）】
-{ai_prompt}
-"""
-                        try:
-                            res_text = ask_claude(prompt, system=AWAKENED_SCIENTIST_PROMPT, max_tokens=2500)
-                            if not res_text:
-                                raise RuntimeError("Claudeからの応答が空でした（ANTHROPIC_API_KEY 未設定の可能性があります）")
-                            st.markdown(f"#### 🎯 最終決断レポート（10億捕捉の{buy_count}口）")
-                            display_cols = ["実行者", "口数"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["社会情勢", "霊的要素", "AI直感", "予測ロジック"]
-                            st.dataframe(pd.DataFrame(final_picks)[display_cols])
-                            st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                            st.write("▼ AI（Claude）による全方位・忖度ゼロの分析レポート")
-                            st.markdown(res_text)
-                            st.markdown("</div>", unsafe_allow_html=True)
-
-                            now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-                            df_history = load_sheet("決断記録簿")
-                            save_text = f"【指示】: {user_instruction}\n【厳選の{buy_count}口】\n" + ai_prompt + "\n\n【AIの解説】\n" + res_text
-                            new_history = pd.DataFrame({"日時": [now_str], "対象回号": [t_round_decide_str], "決断内容": [save_text]})
-                            df_history = pd.concat([new_history, df_history], ignore_index=True) if not df_history.empty else new_history
-                            save_sheet("決断記録簿", df_history)
-
-                            # ★答え合わせ用に「最終買い目」を構造化保存（1口=1行・評価つき。同じ回号は最新で置換）
-                            sc_summary = " / ".join(f"{it['項目'][:5].strip()}{it['評価']}" for it in scorecard)
-                            buy_rows = []
-                            for x in per_rows:
-                                _nm = [v for v in x["数字"].split(",") if v.strip().isdigit()]
-                                row = {"日時": now_str, "対象回号": t_round_decide_str, "口": x["口"], "レンズ": x["レンズ"],
-                                       "口別評価": x["評価"], "スコアカード": sc_summary, "締め具合": "バランス型"}
-                                for _j in range(LOTO_PICK_COUNT):
-                                    row[f"数字{_j+1}"] = (_nm[_j] if _j < len(_nm) else "")
-                                buy_rows.append(row)
-                            try:
-                                df_buy = load_sheet("最終買い目")
-                                new_buy = pd.DataFrame(buy_rows)
-                                if not df_buy.empty and "対象回号" in df_buy.columns:
-                                    df_buy = pd.concat([new_buy, df_buy[df_buy["対象回号"].astype(str) != str(t_round_decide_str)]], ignore_index=True)
-                                else:
-                                    df_buy = new_buy
-                                save_sheet("最終買い目", df_buy)
-                            except Exception as _e:
-                                st.caption(f"（最終買い目の保存はスキップ：{_e}）")
-
-                            st.success("決断内容を『決断記録簿』に保存しました。良い波長で、願いを込めて🍀（当選確率は変わりません。楽しんでください）")
-                            # ★第二のAI(Gemini)用に今回の決断を保持（押した時だけGeminiが動く）
-                            st.session_state["last_decision"] = {
-                                "round": t_round_decide_str, "buy_count": buy_count,
-                                "picks_text": ai_prompt, "claude_report": res_text,
-                            }
-                            st.session_state["last_gemini_opinion"] = ""
-                        except Exception as e:
-                            st.error(f"AIによる最終決断レポートの生成に失敗しました: {e}")
-
-    # ===== 🤝 第二のAI（Gemini）の第二の意見（前回の最終決断に対して・任意） =====
-    ld = st.session_state.get("last_decision")
-    if ld:
-        st.divider()
-        st.markdown("#### 🤝 もう一人の頭脳（Gemini）の第二の意見")
-        st.caption(f"対象：{ld['round']} の {ld['buy_count']}口（直近の最終決断レポート）")
-        if not gemini_available():
-            st.info("※ Geminiキー（GEMINI_API_KEY）を Streamlit Secrets に追加すると、ここで“第二の意見”が使えるようになります。")
-        if st.button("🌙 Geminiに第二の意見をもらう（賛成 / 反対 / 見落とし）"):
-            with st.spinner("もう一人のAIが、別の角度から検証中..."):
-                g_sys = (
-                    "あなたはロト7を冷静に評価する第二のAI監査官。別AI(Claude)が選んだ口と結論に対し、忖度せず "
-                    "『賛成できる点 / 反対・懸念点 / Claudeが見落としていそうな点 / 次の一手』を率直に述べる。"
-                    "当選確率そのものは変わらないという事実を踏まえ、誇大な断定はしない。日本語で、結論を先に、短い箇条書きで簡潔に。"
-                )
-                g_prompt = (
-                    f"対象回号:{ld['round']} / 口数:{ld['buy_count']}\n\n"
-                    f"【選ばれた{ld['buy_count']}口（各行=その口の数字と気持ち）】\n{ld['picks_text']}\n\n"
-                    f"【Claudeの最終結論】\n{ld['claude_report']}\n\n"
-                    "上記の選定とClaudeの結論について、第二の意見を述べてください。"
-                )
-                st.session_state["last_gemini_opinion"] = ask_gemini(g_prompt, system=g_sys, max_tokens=2200)
-        if st.session_state.get("last_gemini_opinion"):
-            st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-            st.write("▼ 第二のAI（Gemini）の見立て")
-            st.markdown(st.session_state["last_gemini_opinion"])
-            st.markdown("</div>", unsafe_allow_html=True)
-
-elif st.session_state.menu == "結果発表と振り返り":
-    st.title("🔄 答え合わせと地球規模の反省会")
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["予測の答え合わせ", "💬 宇宙と繋がる徹底反省会（PDCA）", "過去の決断記録簿", "🏆 当選環境アーカイブ分析", "🌦 天気×結果の検証", "🔬 バックテスト（本物か検証）", "📊 通算成績", "🔎 AI分析の答え合わせ"])
-    
-    df_note = load_sheet("予測ノート")
-    df_real = load_sheet("実データ")
-    auto_round, _ = get_next_round_info(df_real)
-    
-    # ★手打ち入力排除：確認する回号のプルダウン
-    if not df_note.empty and "対象回号" in df_note.columns:
-        rounds_set = set(df_note["対象回号"].tolist())
-        def ext_num(s):
-            m = re.findall(r'\d+', str(s))
-            return int(m[0]) if m else 0
-        rev_rounds = sorted(list(rounds_set), key=ext_num, reverse=True)
-    else:
-        rev_rounds = [f"第{auto_round - 1}回"]
-        
-    t_round_rev_str = st.selectbox("確認する回号を選択", rev_rounds)
-    df_target = df_note[df_note["対象回号"] == t_round_rev_str] if not df_note.empty else pd.DataFrame()
-
-    with tab1:
-        if df_target.empty: st.info("予測データがありません。")
-        else:
-            st.write("※ 最新データ取得時に自動で採点された結果です。")
-            display_cols = ["AIの助言", "実行者", "口数"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + ["社会情勢", "霊的要素"]
-            st.dataframe(df_target[[c for c in display_cols if c in df_target.columns]], height=400)
-
-    with tab8:
-        st.markdown("#### 🔎 前回のAI分析・口別評価は当たっていたか（答え合わせ）")
-        st.caption("最終決定で保存した買い目と評価を、実際の当選結果と突き合わせ、『◎の口は本当に当たったか／指摘した弱点は影響したか』を事実で検証します。回を重ねて分析の精度を詰めるための画面です。")
-        df_buy = load_sheet("最終買い目")
-        actual_v = actual_numbers_for_round(df_real, t_round_rev_str)
-        if df_buy.empty or "対象回号" not in df_buy.columns:
-            st.info("まだ『最終買い目』の保存がありません。最終決定を一度実行すると、次回からここで答え合わせできます。")
-        elif not actual_v:
-            st.info(f"{t_round_rev_str} の当選結果がまだ取り込まれていません（抽選後に『📡 最新データ取得』を実行してください）。")
-        else:
-            sub_v = df_buy[df_buy["対象回号"].astype(str) == str(t_round_rev_str)]
-            if sub_v.empty:
-                st.info(f"{t_round_rev_str} の最終買い目の保存がありません（この回は最終決定を保存していません）。")
-            else:
-                rows_v = []
-                for _, r in sub_v.iterrows():
-                    nums = [int(r.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(r.get(f"数字{i}", "")).isdigit()]
-                    rows_v.append({"口": r.get("口"), "レンズ": r.get("レンズ"), "口別評価": str(r.get("口別評価", "")),
-                                   "的中数": len(set(nums) & actual_v), "数字": ",".join(str(n).zfill(2) for n in nums)})
-                st.write(f"正解番号（{t_round_rev_str}）: **{sorted(actual_v)}**")
-                st.dataframe(pd.DataFrame(rows_v).sort_values("的中数", ascending=False), use_container_width=True, height=300)
-
-                def _avg(mark):
-                    hs = [x["的中数"] for x in rows_v if x["口別評価"] == mark]
-                    return (round(sum(hs) / len(hs), 2), len(hs)) if hs else (None, 0)
-                a2, n2 = _avg("◎"); a1, n1 = _avg("○"); a0, n0 = _avg("△")
-                st.markdown("##### 口別評価は的中と相関したか（◎ほど当たっていれば評価は妥当）")
-                cc = st.columns(3)
-                cc[0].metric("◎の平均的中", a2 if a2 is not None else "—", f"{n2}口")
-                cc[1].metric("○の平均的中", a1 if a1 is not None else "—", f"{n1}口")
-                cc[2].metric("△の平均的中", a0 if a0 is not None else "—", f"{n0}口")
-                best_v = max(rows_v, key=lambda x: x["的中数"])
-                st.write(f"最高的中：口{best_v['口']}（{best_v['レンズ']}・評価{best_v['口別評価']}）＝ **{best_v['的中数']}個**　／　全{len(rows_v)}口の最高 {best_v['的中数']}個")
-                sc_v = str(sub_v.iloc[0].get("スコアカード", ""))
-                if sc_v and sc_v != "nan":
-                    st.caption("決定時のスコアカード：" + sc_v)
-                verdict = []
-                if a2 is not None and a0 is not None:
-                    if a2 > a0: verdict.append("◎の口が△の口より平均的中が高い＝今回は口別評価が“当たって”いた。")
-                    elif a2 < a0: verdict.append("△の口の方が当たった＝今回は評価が外れた（評価は確率を保証しない＝各回が独立な証拠）。")
-                    else: verdict.append("◎と△で差なし＝今回は評価が的中差に表れなかった。")
-                verdict.append("※ロト7は毎回独立。1回の結果で評価の良し悪しは決まりません。回を重ねて傾向を見ること。")
-                st.info(" ".join(verdict))
-                if st.button("🧠 AIにこの答え合わせを総括させる（任意・少額のAPI）"):
-                    if not api_key:
-                        st.error("APIキーが未設定です。")
-                    else:
-                        with st.spinner("AIが分析の正否を検証中..."):
-                            vp = (f"対象:{t_round_rev_str} 正解:{sorted(actual_v)}\n口別評価と的中:\n"
-                                  + "\n".join(f"口{x['口']}({x['レンズ']}) 評価{x['口別評価']} 的中{x['的中数']}個 [{x['数字']}]" for x in rows_v)
-                                  + f"\n決定時スコアカード:{sc_v}")
-                            vv = ask_claude(
-                                "次は前回の最終決定の『口別評価・スコアカード』と実際の的中の答え合わせです。"
-                                "評価は当たっていたか、弱点指摘は妥当だったかを忖度なく検証し、次回の改善を1〜2点だけ。"
-                                "ロト7は各回独立なので1回で断定せず、傾向として語ること。誇大表現禁止。\n\n" + vp,
-                                system=REVIEW_PDCA_PROMPT, max_tokens=1200)
-                            if vv:
-                                st.markdown(vv)
-
-    with tab2:
-        st.markdown("#### 💬 一歩一歩真実に近づくための、量子レベルでの反省会")
-        
-        # ★手打ち入力排除：分析テーマのプルダウン
-        rev_question_options = [
-            "今回の正解番号は、地球の重力や環境、天下り等の社会状況、見えない力とどう量子的にリンクしていたか？",
-            "ニアピン（惜しい数字）が起きた原因は何か？ 物理的な波及アルゴリズムのズレを徹底分析せよ。",
-            "次回10億円を仕留めるため、私たちが日常で高めるべき波長（徳積み）と、焦点を当てるべきセンサーを指示せよ。"
-        ]
-        user_rev_input = st.selectbox("🧠 最強予知科学者への分析依頼テーマ", rev_question_options)
-        
-        if st.button("🌍 地球規模の徹底反省会をスタートする"):
-            if not api_key: st.error("APIキーが設定されていません。")
-            elif df_target.empty: st.warning("対象回号のデータがありません。")
-            else:
-                with st.spinner("実際の地球が出した答えと、我々の多角的予測とのズレを天才科学者が徹底分析中..."):
-                    target_txt = "\n".join([f"{r['実行者']} / 社会:{r.get('社会情勢','')} / 霊的:{r.get('霊的要素','')} -> " + ",".join([str(r.get(f"数字{i}", "")) for i in range(1, LOTO_PICK_COUNT + 1)]) + f" (結果:{r['AIの助言']})" for _, r in df_target.iterrows()])
-                    
-                    # 回号文字列から数値を抽出して実データと照合
-                    rev_num = re.findall(r'\d+', t_round_rev_str)
-                    actual_match = pd.DataFrame()
-                    if rev_num:
-                        actual_match = df_real[df_real["回号"] == f"第{rev_num[0]}回"]
-                    
-                    actual_info = actual_match.to_csv(index=False) if not actual_match.empty else "未取得"
-                    
-                    prompt = f"""【本抽選の正解データ】:
-{actual_info}
-
-【我が家の予測と結果（社会:＝霊的:＝実行者のその日の気持ちの言葉）】:
-{target_txt}
-
-【ユーザーからの依頼】: "{user_rev_input}"
-"""
-                    try:
-                        res_text = ask_claude(prompt, system=REVIEW_PDCA_PROMPT, max_tokens=2000)
-                        if not res_text:
-                            raise RuntimeError("Claudeからの応答が空でした（ANTHROPIC_API_KEY 未設定の可能性があります）")
-                        st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                        st.markdown(res_text)
-                        st.markdown("</div>", unsafe_allow_html=True)
-
-                        # PDCA：この学びを『反省ログ』に蓄積し、次回以降の予測AIへ引き継ぐ（Act）
-                        try:
-                            log_now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-                            df_log = load_sheet("反省ログ")
-                            new_log = pd.DataFrame({"日時": [log_now], "対象回号": [t_round_rev_str], "分析テーマ": [user_rev_input], "AIの学び": [res_text]})
-                            df_log = pd.concat([new_log, df_log], ignore_index=True) if not df_log.empty else new_log
-                            save_sheet("反省ログ", df_log)
-                            st.success("この学びは『反省ログ』に蓄積され、次回の最終決断AIに自動で引き継がれます（PDCAが回り始めました）。")
-                        except Exception as e:
-                            st.warning(f"反省ログの保存に失敗しました（分析自体は成功しています）: {e}")
-                    except Exception as e:
-                        st.error(f"反省会レポートの生成中にエラーが発生しました。詳細: {e}")
-
-    with tab3:
-        df_history = load_sheet("決断記録簿")
-        if not df_history.empty and "日時" in df_history.columns:
-            for _, row in df_history.iterrows():
-                with st.expander(f"記録: {row.get('日時', '')} | {row.get('対象回号', '')}"):
-                    st.write(row.get("決断内容", ""))
-        else: st.info("記録はありません。")
-
-    with tab4:
-        st.markdown("#### 🏆 あなたが当てた回の『環境・地球の動き・宇宙の配置』を多角分析")
-        st.markdown("<div class='info-box'>5等・6等を含む過去の的中（3個一致以上）を全自動で抽出し、<b>当選した瞬間に共通していた条件</b>（重力・潮・月相・干支・九星・六曜）を浮かび上がらせます。これが4等→3等→2等→1等へ引き上げるための『当選の波長』の正体です。</div>", unsafe_allow_html=True)
-        if st.button("🏆 当選環境を集計し、共通法則をAIが多角分析する"):
-            hits, win_env = analyze_winning_environment(df_note, df_real)
-            if not hits:
-                st.info("まだ的中記録（3個一致以上）が見つかりませんでした。「最新データ取得」で採点を実行してから再度お試しください。")
-            else:
-                st.success(f"過去の的中（6等以上）を {len(hits)} 件検出しました。当選時の環境を解析します。")
-                st.markdown("##### 🌌 当選時に共通していた環境条件（出現回数の多い順）")
-                for axis in ENV_AXIS_WEIGHTS:
-                    common = win_env[axis].most_common(3)
-                    if common:
-                        txt = " / ".join([f"{v}（{c}回）" for v, c in common])
-                        st.write(f"- **{axis}**：{txt}")
-                st.markdown("##### 📋 的中した回の環境一覧")
-                st.dataframe(pd.DataFrame([{"回号": h["回号"], "抽選日": h["抽選日"], "的中": h["等級"], **{ax: h["環境"][ax] for ax in ENV_AXIS_WEIGHTS}} for h in hits]))
-
-                if not api_key:
-                    st.warning("AIによる深掘り分析にはAPIキーの設定が必要です。")
-                else:
-                    with st.spinner("当選時に共通する『地球の動き・宇宙の配置』を、予知科学者が多角的に深掘り中..."):
-                        env_summary = "\n".join([f"{h['回号']} {h['抽選日']} ({h['等級']}) | " + " / ".join([f"{ax}:{h['環境'][ax]}" for ax in ENV_AXIS_WEIGHTS]) for h in hits])
-                        common_summary = "\n".join([f"{axis}: " + ", ".join([f"{v}({c}回)" for v, c in win_env[axis].most_common(3)]) for axis in ENV_AXIS_WEIGHTS if win_env[axis]])
-                        win_prompt = f"""{REVIEW_PDCA_PROMPT}
-
-【ご主人が実際に当選した回の環境データ】
-{env_summary}
-
-【当選時に共通して現れた条件の集計】
-{common_summary}
-
-上記の実データから、ご主人が当選しやすい『地球の動き・宇宙の配置・暦の波長』の共通法則を多角的に特定せよ。そして4等・3等・2等・1等へ引き上げるために『次にどの環境条件の日を狙い撃つべきか』『どの見えないセンサーを研ぎ澄ますべきか』を、確信を持って具体的に指示せよ。"""
-                        try:
-                            res_text = ask_claude(win_prompt, system=REVIEW_PDCA_PROMPT, max_tokens=2000)
-                            if not res_text:
-                                raise RuntimeError("Claudeからの応答が空でした（ANTHROPIC_API_KEY 未設定の可能性があります）")
-                            st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                            st.write("▼ 予知科学者（Claude）による『あなたの当選環境』の深層分析")
-                            st.markdown(res_text)
-                            st.markdown("</div>", unsafe_allow_html=True)
-                            try:
-                                log_now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-                                df_log = load_sheet("反省ログ")
-                                new_log = pd.DataFrame({"日時": [log_now], "対象回号": ["当選環境アーカイブ分析"], "分析テーマ": ["当選時の環境共通法則の特定"], "AIの学び": [res_text]})
-                                df_log = pd.concat([new_log, df_log], ignore_index=True) if not df_log.empty else new_log
-                                save_sheet("反省ログ", df_log)
-                            except Exception:
-                                pass
-                        except Exception as e:
-                            st.error(f"当選環境のAI分析に失敗しました: {e}")
-
-    with tab5:
-        st.markdown("#### 🌦 天気は出目に影響しているか？（忖度なしで検証）")
-        st.caption("各抽選日の東京の実天気（『📚 全期間の当選番号＋天気を取り込む』実行後に有効）と出目の関係を集計し、AIが辛口で『本物の傾向かノイズか』を判定します。")
-        df_real_w = load_sheet("実データ")
-        wsummary, wrows = analyze_weather_correlation(df_real_w)
-        if not wrows:
-            st.info("天気データがありません。先に「📡 最新データ取得」ページの『📚 全期間の当選番号＋天気を取り込む』を実行してください。")
-        else:
-            st.dataframe(pd.DataFrame(wrows))
-            if st.button("🌦 天気×結果をAIに辛口検証してもらう"):
-                if not api_key:
-                    st.error("Claudeのキー（ANTHROPIC_API_KEY）が未設定です。")
-                else:
-                    with st.spinner("天気と出目の関係を辛口で検証しています..."):
-                        wprompt = f"""次は、ロト7の各抽選日の東京の天気カテゴリ別に、当選数字の傾向を集計したものです。
-{wsummary}
-
-問い：天気（晴れ／曇り／雨／嵐 など）と当選数字の傾向（合計・奇数比・高数字比・頻出数字）に、統計的に意味のある関係があると言えるか？
-忖度せず判定せよ。サンプル数の偏りや偶然（ノイズ）に過ぎないなら、はっきり『偶然の範囲＝影響なし』と言い切ること。万一わずかな傾向が見えるなら、その大きさと、過信してはいけない理由も必ず添えよ。"""
-                        wreport = ask_claude(wprompt, system=REVIEW_PDCA_PROMPT, max_tokens=1800)
-                    if wreport:
-                        st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                        st.markdown(wreport)
-                        st.markdown("</div>", unsafe_allow_html=True)
-                    else:
-                        st.warning("検証に失敗しました（APIキー／残高をご確認ください）。")
-
-    with tab6:
-        st.markdown("#### 🔬 バックテスト：このシステムは本当に効くのか？（忖度なし・APIゼロ）")
-        st.caption("過去の全データを使い、各回を『その回より前のデータだけ』で予測して採点。各レンズが『ランダム期待値』より当たっているかを比べます。未来データは一切使いません（lookahead禁止）。")
-        df_bt = load_sheet("実データ")
-        cN = st.slider("検証する回数（直近から）", 50, 400, 150, 50)
-        if st.button("🔬 バックテストを実行する（数秒）"):
-            with st.spinner("過去データで各レンズを検証しています..."):
-                results, meta = run_backtest(df_bt, window=cN)
-            if not results:
-                st.info("データが足りません。先に「📡 最新データ取得」の『📚 全期間の当選番号＋天気を取り込む』を実行してください。")
-            else:
-                st.caption(f"全 {meta['全データ数']} 回中、直近 約{meta['検証窓']} 回で検証（レンズにより実検証回数は異なります＝表の『検証回数』列）。")
-                st.dataframe(pd.DataFrame(results))
-                real = [r for r in results if r["種別"] == "実レンズ"]
-                st.markdown("##### 判定（忖度なし）")
-                lines = [
-                    "- **リフト** ＝ 平均的中 ÷ ランダム期待。1.0付近＝偶然。",
-                    "- **z値** ＝ 偶然からのズレの大きさ。実レンズを6個同時に見るので、**|z|>3で初めて『要注目』**（多重比較を考慮した厳しめ基準。|z|≦2はほぼ確実に偶然）。",
-                    "- 『対照』(ランダム/量子シード)＝基準線、『合成』(全部入り)＝他レンズの寄せ集めで独立検証ではない。どちらも“勝者”ではありません。",
-                ]
-                if real:
-                    top = max(real, key=lambda x: abs(x["z値(|2|超で要注目)"]))
-                    if abs(top["z値(|2|超で要注目)"]) <= 3:
-                        lines.append(f"- 実レンズの最大は「{top['レンズ']}」(z={top['z値(|2|超で要注目)']})。**3σ未満＝実レンズはどれも事実上ランダムと差なし＝『当てる力』は確認できず**。多角分析は『納得して楽しむ体験・差別化』と割り切るのが正直な結論です（確率は動かない事実と一致）。")
-                    else:
-                        lines.append(f"- 実レンズの最大は「{top['レンズ']}」(z={top['z値(|2|超で要注目)']})で3σ超。注目だが、**別期間・別検証窓で再現するか必ず確認**を（一度の上振れを実力と誤認しない）。")
-                st.markdown("\n".join(lines))
-
-    with tab7:
-        st.markdown("#### 📊 通算成績（これまで全部の合計）")
-        dfn = load_sheet("予測ノート")
-        ov = compute_overall_stats(dfn)
-        if not ov:
-            st.info("まだ採点済みの予想がありません。予想を積み上げ → 抽選後に『📡 最新データ取得（採点）』を重ねると貯まります。")
-        else:
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("総採点口数", f"{ov['総採点口数']}口")
-            m2.metric("平均的中", f"{ov['平均的中']}個")
-            m3.metric("最高一致", f"{ov['最高一致']}個")
-            m4.metric("ニアピン総数", f"{ov['ニアピン総数']}")
-            st.markdown("##### 等級別の回数")
-            st.dataframe(pd.DataFrame(ov["分布"]))
-            lensb = compute_my_lens_performance(dfn)
-            if lensb:
-                st.markdown("##### レンズ別 累計成績（どの可能性が近いか）")
-                st.dataframe(pd.DataFrame(lensb))
-            st.markdown("##### 収支（任意）")
-            spent_est = ov["総採点口数"] * 300
-            st.caption(f"推定投資額（1口300円換算）：約 {spent_est:,} 円")
-            won = st.number_input("これまでの当選総額（円）を入れると収支が出ます", min_value=0, value=0, step=1000)
-            if won > 0:
-                st.write(f"収支：**{won - spent_est:,} 円**（当選 {won:,} − 推定投資 {spent_est:,}）")
-
-elif st.session_state.menu == "総監督レポート":
-    st.title("📋 今週の総監督レポート")
-    st.markdown("<div class='info-box'>当選 → 分析 → 次回 を1画面で締める『監督席』です。直近の結果を振り返り、次回への構えを確認し、AI監督が改善指示を出します。</div>", unsafe_allow_html=True)
-
-    df_real = load_sheet("実データ")
-    df_note = load_sheet("予測ノート")
-    df_other = load_sheet("他サイト予想")
-    next_round, _ = get_next_round_info(df_real)
-    last_round_label = f"第{next_round - 1}回"
-    next_round_label = f"第{next_round}回"
-
-    st.markdown(f"### 🔁 直近の抽選 **{last_round_label}** → 次回 **{next_round_label}**")
-
-    actual = actual_numbers_for_round(df_real, last_round_label)
-    best = user_best_prediction_for_round(df_note, last_round_label, actual) if actual else None
-    site_hot = site_consensus_hot(df_other)
-
-    # ① 直近の結果レビュー
-    st.markdown("#### ① 直近の結果レビュー")
-    if actual:
-        st.write(f"正解番号（{last_round_label}）: **{sorted(actual)}**")
-        if best:
-            grade = "🎉 当せん圏！" if best["hits"] >= 4 else "惜しい" if best["hits"] == 3 else "次へ"
-            st.write(f"あなたの最高成績: **{best['hits']}個的中**（{best['実行者']} / {best['口数']}）{grade} → {best['nums']}")
-        else:
-            st.info("この回のあなたの予測記録が見つかりませんでした。")
-        # どのサイトが近かったか
-        if not df_other.empty and "予想数字" in df_other.columns:
-            board = []
-            for _, row in df_other.iterrows():
-                snums = set(int(x) for x in re.findall(r'\d+', str(row.get("予想数字", ""))) if 1 <= int(x) <= LOTO_MAX_NUM)
-                if snums:
-                    board.append({"ソース": row.get("ソース", row.get("サイトURL", "")), "的中数": len(snums & actual)})
-            if board:
-                board.sort(key=lambda x: x["的中数"], reverse=True)
-                st.write(f"他サイトで最も近かった: **{board[0]['ソース']}**（{board[0]['的中数']}個的中）")
-    else:
-        st.info(f"{last_round_label} の結果がまだ取り込まれていません。先に「📡 最新データ取得」を実行してください。")
-
-    # ② 次回への構え
-    st.markdown("#### ② 次回への構え")
-    prepared = len(df_note[df_note["対象回号"] == next_round_label]) if (not df_note.empty and "対象回号" in df_note.columns) else 0
-    st.write(f"{next_round_label} に向けて積み上げ済み: **{prepared}口**")
-    if site_hot:
-        st.write(f"他サイトの人気数字トップ7: **{site_hot}**")
-    if prepared == 0:
-        st.warning("次回の積み上げがまだです。「🌍 予測積上げ」で今日の気持ちを入れて積み上げましょう。")
-
-    # 偏り検知（忖度しない＝偏りを暴く）
-    bias_warn = detect_prediction_bias(df_note)
-    if bias_warn:
-        st.warning(f"⚠️ 偏り検知：{bias_warn}")
-
-    # 🎲 自分のレンズ別成績（どの可能性が近かったか＝学習用。剪定はしない）
-    my_lens = compute_my_lens_performance(df_note)
-    if my_lens:
-        st.markdown("#### 🎲 自分のレンズ別成績（どの可能性が近かったか）")
-        st.caption("探索モードで各口に割り当てた『可能性（レンズ）』ごとの平均的中です。広く張って情報を集めるための学習用で、このランキングで剪定はしません。")
-        st.dataframe(pd.DataFrame(my_lens))
-
-    # ③ AI監督コメント（APIを使うのでボタン式。1回だけ呼び出し）
-    st.markdown("#### ③ AI監督からの総括と次回への指示")
-    if st.button("🧭 AI監督に今週の総括と次回への指示を出してもらう"):
-        if not api_key:
-            st.error("Claudeのキー（ANTHROPIC_API_KEY）が未設定です。")
-        else:
-            with st.spinner("統括監督AIが『結果・分析・次回』をつなげて講評しています..."):
-                lessons = get_recent_lessons(2)
-                summary = f"""直近 {last_round_label} の正解番号: {sorted(actual) if actual else '未取得'}
-あなたの最高成績: {(str(best['hits']) + '個的中 → ' + str(best['nums'])) if (actual and best) else '記録なし'}
-他サイトの人気数字トップ7: {site_hot if site_hot else 'データなし'}
-次回 {next_round_label} の積み上げ口数: {prepared}口
-予測の偏り検知: {bias_warn if bias_warn else '大きな偏りは検知されず'}
-過去の反省会の学び:
-{lessons if lessons else 'まだなし'}"""
-                sup_prompt = f"""次のロト7運用状況を、統括監督として講評してください。
-
-{summary}
-
-必ず次の見出しで出力してください:
-## 今週の総括
-（1〜2行）
-## 良かった点 / 外した要因
-（箇条書き）
-## 次回 {next_round_label} への調整指示
-（狙う環境・重み付け・心の持ち方を具体的に）
-## 今週のやることチェックリスト
-（金曜購入に向けた手順を箇条書きで）"""
-                report = ask_claude(sup_prompt, system=SUPERVISOR_PROMPT, max_tokens=2000)
-            if not report:
-                st.warning("AI監督コメントの生成に失敗しました（APIキー／残高をご確認ください）。")
-            else:
-                st.markdown("<div class='analysis-box'>", unsafe_allow_html=True)
-                st.markdown(report)
-                st.markdown("</div>", unsafe_allow_html=True)
-                try:
-                    log_now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-                    df_log = load_sheet("反省ログ")
-                    new_log = pd.DataFrame({"日時": [log_now], "対象回号": [f"総監督レポート({last_round_label}→{next_round_label})"], "分析テーマ": ["週次の統括監督"], "AIの学び": [report]})
-                    df_log = pd.concat([new_log, df_log], ignore_index=True) if not df_log.empty else new_log
-                    save_sheet("反省ログ", df_log)
-                    st.caption("この監督講評は『反省ログ』に保存され、次回の予測AIにも引き継がれます。")
-                except Exception:
-                    pass
-
-# ==========================================
-# 6. 万能AI占い師の館（手打ち不要・スマホ無敵版）
-# ==========================================
-elif st.session_state.menu == "万能AI占い師の館":
-    st.title("🔮 万能AI占い師の館（スマホ手打ち不要版）")
-    st.markdown("<div class='info-box'>占いの相談室です。占い・運勢・ラッキーナンバーは<b>誰でもパスなしで</b>使えます。<br>見られたくない相談だけは、下の<b>「🔒 自分だけのプライベート相談室」</b>に合言葉で入れます（会話は公開の部屋と完全に分かれ、他の人に見えません）。</div>", unsafe_allow_html=True)
-
-    if not api_key:
-        st.error("占い機能を利用するにはAPIキーの設定が必要です。")
-    else:
-        # 通常は誰でもパス不要で使える『公開の相談室』。
-        # 見られたくない時だけ、合言葉で『自分だけのプライベート相談室』に切り替えられる。
-        private_pass = (st.secrets.get("FORTUNE_PRIVATE_PASSCODE", "")
-                        or st.secrets.get("FORTUNE_PASSCODE_U1", "")
-                        or st.secrets.get("FORTUNE_PASSCODE", ""))
-        in_private = bool(st.session_state.get("fortune_private", False) and private_pass)
-
-        if in_private:
-            st.markdown("<div class='info-box'>🔒 ここは<b>あなただけのプライベート相談室</b>。会話は公開の部屋と完全に分かれており、他の人には見えません。何でも安心して話してください。</div>", unsafe_allow_html=True)
-            if st.button("🔓 公開の相談室に戻る"):
-                st.session_state.fortune_private = False
-                st.rerun()
-        else:
-            if private_pass:
-                with st.expander("🔒 自分だけのプライベート相談室に入る（合言葉）", expanded=False):
-                    with st.form("fortune_private_form"):
-                        code_in = st.text_input("あなたの合言葉（パスコード）", type="password")
-                        if st.form_submit_button("🔓 入る"):
-                            if code_in == private_pass:
-                                st.session_state.fortune_private = True
-                                st.rerun()
-                            else:
-                                st.error("合言葉が違います。")
-            else:
-                st.caption("🔒 自分だけの非公開の部屋を作るには、Secrets に  FORTUNE_PRIVATE_PASSCODE = \"あなただけの合言葉\"  を追加してください。")
-
-        # 公開／プライベートで会話を分離（プライベートの内容は公開の部屋に出ない）
-        mode_key = "private" if in_private else "public"
-        msg_key = f"fortune_messages::{mode_key}"
-        fapi_key = f"fortune_api::{mode_key}"
-        if msg_key not in st.session_state:
-            if in_private:
-                welcome = "ようこそ、あなただけの相談室へ。✨\nここでの会話は誰にも見られません。占いも、誰にも言えない悩みも、人生のことも——どうか安心して、何でも話してください。"
-            else:
-                welcome = "ようこそ、神秘の部屋へ。✨\n占い・運勢・相性・ラッキーナンバー、何でもお尋ねください。今日は何をお話ししましょうか。"
-            st.session_state[msg_key] = [{"role": "assistant", "content": welcome}]
-        if fapi_key not in st.session_state:
-            st.session_state[fapi_key] = []
-
-        def send_to_fortune(text, image=None):
-            """占い師Claudeに文脈付きで送信し、応答テキストを返す（利用者ごとに履歴を保持）。"""
-            content = []
-            if image is not None:
-                buf = io.BytesIO()
-                image.save(buf, format="PNG")
-                b64 = base64.standard_b64encode(buf.getvalue()).decode("utf-8")
-                content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}})
-            content.append({"type": "text", "text": text})
-            st.session_state[fapi_key].append({"role": "user", "content": content})
-            # ★今日の日付（日本時間）を毎回システム指示に注入。「今日のラッキーナンバー」等で正しい日付を使わせる
-            _now = datetime.now(JST)
-            _wd = ["月", "火", "水", "木", "金", "土", "日"][_now.weekday()]
-            date_ctx = (
-                f"\n\n【現在の日時（日本時間・最重要）】今日は {_now.year}年{_now.month}月{_now.day}日（{_wd}曜日）{_now.strftime('%H:%M')} です。"
-                "『今日』『本日』『今日のラッキーナンバー』などの質問には、必ずこの日付を基準に答えること。"
-                "推測で別の日付を口にしてはならない。"
-            )
-            # 💰コスト対策：履歴は直近12メッセージに切り詰め＋過去の画像は毎回送らない（テキスト置換）。青天井の課金を防ぐ。
-            hist = st.session_state[fapi_key][-12:]
-            while hist and hist[0].get("role") != "user":  # 先頭はuserから（Anthropicの規約）
-                hist = hist[1:]
-            trimmed = []
-            for _idx, _m in enumerate(hist):
-                _c = _m.get("content")
-                if isinstance(_c, list) and _idx != len(hist) - 1:  # 最新メッセージ以外は画像を外す
-                    _keep = [_b for _b in _c if not (isinstance(_b, dict) and _b.get("type") == "image")]
-                    if len(_keep) < len(_c):
-                        _keep = _keep + [{"type": "text", "text": "（この時、画像を送付）"}]
-                    trimmed.append({"role": _m.get("role"), "content": _keep if _keep else "（画像を送付）"})
-                else:
-                    trimmed.append(_m)
-            try:
-                reply = claude_chat(trimmed, system=FORTUNE_CHAT_PROMPT + date_ctx, max_tokens=3000)
-                if not reply:
-                    reply = "（波動が少し乱れました。もう一度、ゆっくり話しかけてください）"
-            except Exception as e:
-                reply = f"（通信エラーが発生しました。再度お試しください: {e}）"
-            st.session_state[fapi_key].append({"role": "assistant", "content": reply})
-            return reply
-
-        DEFAULT_IMG_QUESTION = "この画像から私の運命と波長を深く読み解いてください。"
-
-        # --- 補助メニュー（たまにしか使わないので折りたたみ。写真は最初に置く）---
-        with st.expander("🗂 占術を選ぶ ／ 📸 写真を送る ／ 定番の質問から選ぶ", expanded=False):
-            img_source = st.file_uploader("📂 写真を選ぶ（手相・人相・オーラ等）。選ぶと次のメッセージに添付されます。", type=["jpg", "jpeg", "png"], key="fortune_img")
-
-            c1, c2 = st.columns([3, 1])
-            div_list = ["🕊 人生の目的・魂の使命の鑑定", "西洋占星術（ホロスコープ）", "四柱推命", "タロット占い", "手相（要写真）", "人相（要写真）", "オーラ鑑定（要写真）", "コーヒー占い（要写真）"]
-            selected_div = c1.selectbox("🔮 占術を選ぶ", ["占いを選択してください..."] + div_list, key="fortune_div")
-            if c2.button("この占いを始める", use_container_width=True):
-                if selected_div != "占いを選択してください...":
-                    user_msg = f"「{selected_div}」をお願いします。"
-                    st.session_state[msg_key].append({"role": "user", "content": user_msg})
-                    with st.spinner("星の声を聴いています..."):
-                        reply = send_to_fortune(user_msg)
-                        st.session_state[msg_key].append({"role": "assistant", "content": reply})
-                    st.rerun()
-
-            fortune_options = [
-                "（選んでこのボタンで送信）",
-                "私はなぜこの世に生まれてきたのか、魂の目的と使命を視てください。",
-                "私の人生の目的と、これから進むべき道を教えてください。",
-                "家族の本当の幸せのために、私が今できることは何でしょうか？",
-                "私の全体的な運勢と現在の波動を鑑定してください。",
-                "私の金運と直感の冴えを視てください。",
-                "今の私の精神状態（オーラやエネルギー）はどうなっていますか？",
-                DEFAULT_IMG_QUESTION,
-            ]
-            quick_pick = st.selectbox("定番の質問から選ぶ", fortune_options, key="fortune_quick")
-            if st.button("この質問を送る", use_container_width=True):
-                if quick_pick != "（選んでこのボタンで送信）":
-                    img = None
-                    if img_source:
-                        img = Image.open(img_source).convert('RGB'); img.thumbnail((800, 800))
-                    disp = quick_pick if not img else f"📸 写真を送信しました。 {quick_pick}"
-                    st.session_state[msg_key].append({"role": "user", "content": disp})
-                    with st.spinner("星の導きを読み解いています..."):
-                        reply = send_to_fortune(quick_pick, image=img)
-                        st.session_state[msg_key].append({"role": "assistant", "content": reply})
-                    st.rerun()
-
-        # --- 操作ボタン（リセット ／ ロト7への橋渡し）---
-        b1, b2 = st.columns(2)
-        if b1.button("🔄 会話をリセット", use_container_width=True):
-            for k in [msg_key, fapi_key]:
-                if k in st.session_state: del st.session_state[k]
-            st.rerun()
-        if b2.button("🎯 今日の占いナンバーをロト7へ渡す", use_container_width=True):
-            # まず、いま占い師がチャットで出している鑑定文からラッキーナンバーを拾う
-            last_ai = ""
-            for m in reversed(st.session_state[msg_key]):
-                if m["role"] == "assistant":
-                    last_ai = m["content"]
-                    break
-            lucky = extract_lucky_from_text(last_ai)
-
-            # 鑑定文に数字が無い場合だけ、会話の文脈から数字だけを抽出（抽出専用ペルソナで確実に）
-            if not lucky:
-                with st.spinner("占いの結果からラッキーナンバーを読み取っています..."):
-                    temp_msgs = st.session_state[fapi_key] + [
-                        {"role": "user", "content": f"これまでの鑑定で出たロト7のラッキーナンバーを、1〜{LOTO_MAX_NUM}の数字だけカンマ区切りで出力してください。日付・年号・順位などの数字は含めないこと。説明は不要です。"}
-                    ]
-                    try:
-                        ln = claude_chat(temp_msgs, system="あなたは占い結果から数字だけを抜き出す抽出器です。1〜37の数字をカンマ区切りで出力し、それ以外は何も書かないこと。", max_tokens=60, model=MODEL_LIGHT) or ""
-                    except Exception:
-                        ln = ""
-                    lucky = extract_lucky_from_text(ln)
-
-            if lucky:
-                save_fortune_lucky(lucky)
-                st.success(f"今日の占いナンバー {lucky} を保存しました。『🌍 予測積上げ』で「占いを軽く加味する」にチェックすると反映されます（控えめウェイト）。")
-            else:
-                st.warning("占い結果にラッキーナンバーが見つかりませんでした。まず占い師に占ってもらい、数字が出てから押してください。")
-
-        # --- 🌙 もう一人の占い師（Gemini）の見立て（任意・キーがある時だけ表示）---
-        if not gemini_available():
-            st.caption("🌙 もう一人の占い師（Gemini）を呼ぶには、Streamlit Secrets に GEMINI_API_KEY を追加してください。")
-        elif st.button("🌙 もう一人の占い師（Gemini）にも視てもらう", use_container_width=True):
-            last_user = ""
-            for m in reversed(st.session_state[msg_key]):
-                if m["role"] == "user":
-                    last_user = m["content"]; break
-            if not last_user:
-                st.warning("先に占い師へ何か質問してから押してください。")
-            else:
-                _now = datetime.now(JST); _wd = ["月", "火", "水", "木", "金", "土", "日"][_now.weekday()]
-                recent = st.session_state[msg_key][-6:]
-                ctx = "\n".join(f"{'相談者' if x['role']=='user' else '占い師'}: {x['content']}" for x in recent)
-                g_sys = FORTUNE_CHAT_PROMPT + (
-                    f"\n\n【現在の日時（日本時間・最重要）】今日は {_now.year}年{_now.month}月{_now.day}日（{_wd}曜日）{_now.strftime('%H:%M')}。"
-                    "『今日』『今日のラッキーナンバー』に関する質問は必ずこの日付で答えること。"
-                )
-                g_prompt = f"【これまでの会話】\n{ctx}\n\n上記を踏まえ、相談者の最後の問い『{last_user}』に、あなた自身の占いとして鑑定してください。"
-                with st.spinner("もう一人の占い師（Gemini）が星を読んでいます..."):
-                    g_reply = ask_gemini(g_prompt, system=g_sys, max_tokens=2000)
-                st.session_state[msg_key].append({"role": "assistant", "content": "🌙 **もう一人の占い師（Gemini）の見立て**\n\n" + g_reply})
-                st.rerun()
-
-        st.markdown("---")
-
-        # --- チャット履歴 ---
-        for msg in st.session_state[msg_key]:
-            avatar = "🔮" if msg["role"] == "assistant" else "👤"
-            with st.chat_message(msg["role"], avatar=avatar):
-                st.markdown(msg["content"])
-
-        # --- 画面下に固定される入力欄（スクロール不要）---
-        prompt_text = st.chat_input("占い師に話しかける…（写真は上の「🗂」メニューから添付できます）")
-        if prompt_text is not None:
-            text = prompt_text.strip()
-            img = None
-            if img_source:
-                img = Image.open(img_source).convert('RGB'); img.thumbnail((800, 800))
-            if not text and img:
-                text = DEFAULT_IMG_QUESTION
-            if text:
-                disp = text if not img else f"📸 写真を送信しました。 {text}"
-                st.session_state[msg_key].append({"role": "user", "content": disp})
-                with st.spinner("星の導きを読み解いています..."):
-                    reply = send_to_fortune(text, image=img)
-                    st.session_state[msg_key].append({"role": "assistant", "content": reply})
-                st.rerun()
-
-elif st.session_state.menu == "データを見る":
-    st.title("📋 データを見る（スプレッドシートの記録）")
-    st.caption("Googleスプレッドシート『ロト7究極予測室DB』の中身を、アプリの中でそのまま確認できます。下のタブは閲覧専用です。")
-
-    # 🔃 既存の記録を新しい順に並べ替える（順番だけ・記録は消えません）
-    _cs1, _cs2 = st.columns([3, 1])
-    _cs1.caption("📌 古い記録が上に残っている時は、右のボタンで『最新が上』に並べ替えできます（順番を直すだけで、記録は消えません）。")
-    if _cs2.button("🔃 新しい順に並べ替え", use_container_width=True):
-        with st.spinner("記録を新しい順に並べ替えています..."):
-            done = []
-            _dfp = load_sheet("予測ノート")
-            if not _dfp.empty and "実行日" in _dfp.columns:
-                _dfp = _dfp.sort_values("実行日", ascending=False, kind="stable").reset_index(drop=True)
-                if save_sheet("予測ノート", _dfp):
-                    done.append(f"予測ノート（{len(_dfp)}行）")
-            _dfd = load_sheet("決断記録簿")
-            if not _dfd.empty and "日時" in _dfd.columns:
-                _dfd = _dfd.sort_values("日時", ascending=False, kind="stable").reset_index(drop=True)
-                if save_sheet("決断記録簿", _dfd):
-                    done.append("決断記録簿")
-        if done:
-            st.success("最新が上になるよう並べ替えました：" + " ／ ".join(done) + "。スプレッドシートを開くと反映されています。")
-        else:
-            st.info("並べ替える記録が見つかりませんでした。")
-
-    def _show_number_balance(df, title):
-        num_cols = [c for c in df.columns if str(c).startswith("数字")]
-        if not num_cols:
-            return
-        cnt = Counter()
-        for _, r in df.iterrows():
-            for c in num_cols:
-                v = str(r.get(c, "")).strip()
-                if v.isdigit():
-                    cnt[int(v)] += 1
-        if cnt:
-            top = ", ".join(f"{n}×{c}" for n, c in cnt.most_common(12))
-            st.info(f"🔎 {title}：よく出ている数字 上位 → {top}")
-            missing = sorted(set(range(1, LOTO_MAX_NUM + 1)) - set(cnt))
-            if missing:
-                st.caption(f"一度も出ていない数字：{missing}")
-
-    def _latest_round(series):
-        def _rn(s):
-            m = re.findall(r'\d+', str(s))
-            return int(m[0]) if m else 0
-        vals = sorted(series.astype(str).unique(), key=_rn, reverse=True)
-        return vals[0] if vals else None
-
-    tabs = st.tabs(["🌍 予測ノート", "🎯 決断記録簿", "📊 当選履歴", "🏆 サイト成績", "🌐 他サイト予想", "📝 反省ログ", "🔗 サイトURL"])
-
-    with tabs[0]:
-        df = load_sheet("予測ノート")
-        if not df.empty and "実行日" in df.columns:
-            df = df.sort_values("実行日", ascending=False, kind="stable").reset_index(drop=True)  # 最新を上に
-        if df.empty:
-            st.info("まだ予測ノートのデータがありません。『日々の予想・積上げ』で積み上げると、ここに記録されます。")
-        else:
-            if "対象回号" in df.columns:
-                rounds = "、".join(sorted(df["対象回号"].astype(str).unique()))
-                st.write(f"全 {len(df)} 行（口数）。対象回号：{rounds}")
-                latest = _latest_round(df["対象回号"])
-                if latest:
-                    sub = df[df["対象回号"].astype(str) == str(latest)]
-                    _show_number_balance(sub, f"最新 {latest} の積み上げ（{len(sub)}口）")
-                    if "予測ロジック" in sub.columns:
-                        lb = Counter(sub["予測ロジック"].astype(str))
-                        st.caption("観点(レンズ)の内訳：" + ", ".join(f"{k}×{v}" for k, v in lb.most_common()))
-            else:
-                st.write(f"全 {len(df)} 行")
-            st.dataframe(df, use_container_width=True, height=420)
-
-    with tabs[1]:
-        df = load_sheet("決断記録簿")
-        if df.empty:
-            st.info("まだ最終決定の記録がありません。")
-        else:
-            st.write(f"全 {len(df)} 件の最終決定が記録されています（追記式・上書きされません）。")
-            st.dataframe(df, use_container_width=True, height=420)
-
-    with tabs[2]:
-        df = load_sheet("実データ")
-        if df.empty:
-            st.info("当選履歴データがありません。")
-        else:
-            rng = ""
-            if "回号" in df.columns:
-                rs = df["回号"].astype(str).tolist()
-                rng = f"（{rs[0]} 〜 {rs[-1]}）" if rs else ""
-            st.write(f"当選履歴 {len(df)} 回分 {rng}。天気・暦などの環境列つき。")
-            st.dataframe(df, use_container_width=True, height=420)
-
-    with tabs[3]:
-        df = load_sheet("予想成績ログ")
-        if df.empty:
-            st.info("他サイトの成績ログはまだありません。")
-        else:
-            st.dataframe(df, use_container_width=True, height=420)
-
-    with tabs[4]:
-        df = load_sheet("他サイト予想")
-        if df.empty:
-            st.info("他サイト予想データがありません。")
-        else:
-            st.dataframe(df, use_container_width=True, height=420)
-
-    with tabs[5]:
-        df = load_sheet("反省ログ")
-        if df.empty:
-            st.info("反省ログがありません。")
-        else:
-            st.write(f"学び {len(df)} 件。")
-            st.dataframe(df, use_container_width=True, height=420)
-
-    with tabs[6]:
-        df = load_sheet("予想サイトURL")
-        if df.empty:
-            st.info("予想サイトURLが登録されていません。")
-        else:
             st.dataframe(df, use_container_width=True, height=300)
