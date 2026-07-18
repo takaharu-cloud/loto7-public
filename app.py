@@ -1431,6 +1431,16 @@ def compute_overall_stats(df_note):
         "分布": rows,
     }
 
+def detect_carryover(df_real):
+    """キャリーオーバー自動検出：最新回の1等口数が『該当なし/0』なら次回へ繰越中（公式ルール）。"""
+    try:
+        if df_real is None or df_real.empty: return False
+        v = str(df_real.iloc[0].get("1等口数", "")).strip()
+        if not v: return False
+        return ("該当なし" in v) or (re.sub(r"[^0-9]", "", v) == "0")
+    except Exception:
+        return False
+
 def auto_check_hits(df_note, df_real):
     if df_note.empty or df_real.empty: return df_note
     if "AIの助言" not in df_note.columns: df_note["AIの助言"] = "未照合"
@@ -1439,19 +1449,35 @@ def auto_check_hits(df_note, df_real):
     # 回号は数字だけで照合（第/回/空白/表記ゆれでも取りこぼさない）＝無警告の採点ゼロを防ぐ
     real_key = df_real["回号"].astype(str).str.replace(r"[^0-9]", "", regex=True) if "回号" in df_real.columns else None
     for idx, row in df_note.iterrows():
-        if "的中" in str(row.get("AIの助言", "")) and "等" in str(row.get("AIの助言", "")): continue
+        adv = str(row.get("AIの助言", ""))
+        # 公式ルール採点済み(＋B表記あり)はスキップ。旧形式はボーナス対応で再採点する。
+        if "＋B" in adv: continue
         _tn = re.sub(r"[^0-9]", "", str(row.get("対象回号", "")))
         match = df_real[real_key == _tn] if (real_key is not None and _tn) else df_real[df_real.get("回号", "") == str(row.get("対象回号", ""))]
         if not match.empty:
             try:
                 actual = set([int(match.iloc[0].get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(match.iloc[0].get(f"数字{i}", "")).isdigit()])
+                bonus = set([int(match.iloc[0].get(c)) for c in ("ボーナス1", "ボーナス2") if str(match.iloc[0].get(c, "")).strip().isdigit()])
                 pred = set([int(row.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(row.get(f"数字{i}", "")).isdigit()])
                 hits = len(actual & pred)
+                b_hits = len(bonus & pred)
                 near_pins = sum(1 for p in pred if p not in actual and ((p-1) in actual or (p+1) in actual))
-                grade = "👑 1等当せん！" if hits == LOTO_PICK_COUNT else "✨ 2等/3等相当" if hits == LOTO_PICK_COUNT - 1 else "🎯 4等当せん！" if hits == LOTO_PICK_COUNT - 2 else "🎉 5等当せん！" if hits == LOTO_PICK_COUNT - 3 else "惜しい！ 6等リーチ" if hits == LOTO_PICK_COUNT - 4 else "ハズレ"
-                df_note.at[idx, "AIの助言"] = f"{LOTO_PICK_COUNT}個中 {hits}個的中【{grade}】 / ニアピン {near_pins}個"
+                if bonus:
+                    # ★公式ルール準拠（宝くじ公式サイト）：ボーナスは2等/6等の判定に使用
+                    if hits == 7: grade = "👑 1等当せん！"
+                    elif hits == 6 and b_hits >= 1: grade = "✨ 2等当せん！"
+                    elif hits == 6: grade = "✨ 3等当せん！"
+                    elif hits == 5: grade = "🎯 4等当せん！"
+                    elif hits == 4: grade = "🎉 5等当せん！"
+                    elif hits == 3 and b_hits >= 1: grade = "🎊 6等当せん！"
+                    else: grade = "ハズレ"
+                    df_note.at[idx, "AIの助言"] = f"{LOTO_PICK_COUNT}個中 {hits}個的中＋B{b_hits}【{grade}】 / ニアピン {near_pins}個"
+                else:
+                    # ボーナス未取得の回は暫定採点（土曜の全期間取り込みで自動的に公式採点へ更新される）
+                    grade = "👑 1等当せん！" if hits == 7 else "✨ 2等/3等相当" if hits == 6 else "🎯 4等当せん！" if hits == 5 else "🎉 5等当せん！" if hits == 4 else "6等の可能性(B未取得)" if hits == 3 else "ハズレ"
+                    df_note.at[idx, "AIの助言"] = f"{LOTO_PICK_COUNT}個中 {hits}個的中【{grade}】 / ニアピン {near_pins}個"
                 updated = True
-            except Exception as e: 
+            except Exception as e:
                 if not error_shown:
                     st.warning(f"自動採点中に一部データでエラーが発生しました。スキップして続行します: {e}")
                     error_shown = True
@@ -1621,7 +1647,8 @@ def fetch_tokyo_weather_range(start_date, end_date):
     return out
 
 def fetch_loto7_full_history():
-    """lotoseven.com から全回の (回号int, 'YYYY-MM-DD', [7数字]) を取得。"""
+    """lotoseven.com から全回の (回号int, 'YYYY-MM-DD', [本数字7], [ボーナス2], [等級別当せん口数6]) を取得。
+    ボーナス数字は公式ルールの2等/6等判定に必須。当せん口数は人気（分け前）分析とキャリーオーバー検出に使う。"""
     r = requests.get("https://lotoseven.com/ap/tools/show_numbers",
                      headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=40)
     soup = BeautifulSoup(r.content.decode(r.apparent_encoding, errors="replace"), "html.parser")
@@ -1637,7 +1664,9 @@ def fetch_loto7_full_history():
         if len(nums) != 7:
             continue
         ymd = f"{int(m.group(1))}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
-        rows.append((int(cells[0]), ymd, [c.zfill(2) for c in nums]))
+        bonus = [c.zfill(2) for c in cells[9:11] if re.fullmatch(r"\d{1,2}", c)] if len(cells) >= 11 else []
+        winners = [c for c in cells[11:17]] if len(cells) >= 17 else []
+        rows.append((int(cells[0]), ymd, [c.zfill(2) for c in nums], bonus, winners))
     return rows
 
 def backfill_full_history():
@@ -1649,7 +1678,7 @@ def backfill_full_history():
     dates = [r[1] for r in rows]
     wmap = fetch_tokyo_weather_range(min(dates), max(dates))
     data = []
-    for kai, ymd, nums in rows:
+    for kai, ymd, nums, bonus, winners in rows:
         y, mo, da = (int(v) for v in ymd.split("-"))
         dd = date(y, mo, da)
         m_phase, m_tide, m_gravity = get_moon_and_tide(y, mo, da)
@@ -1658,11 +1687,16 @@ def backfill_full_history():
         row = {"回号": f"第{kai}回", "抽せん日": ymd}
         for i, n in enumerate(nums):
             row[f"数字{i+1}"] = n
+        row["ボーナス1"] = bonus[0] if len(bonus) >= 1 else ""
+        row["ボーナス2"] = bonus[1] if len(bonus) >= 2 else ""
+        for gi in range(6):
+            row[f"{gi+1}等口数"] = winners[gi] if gi < len(winners) else ""
         row.update({"六曜": rokuyo, "干支": get_eto(dd), "風水": get_fengshui(dd), "吉凶日": "特になし",
                     "月齢": m_phase, "潮回り": m_tide, "重力状態": m_gravity,
                     "天気": w[0], "気温": w[1], "降水": w[2], "気圧": w[3]})
         data.append(row)
     cols = ["回号", "抽せん日"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + \
+           ["ボーナス1", "ボーナス2"] + [f"{g}等口数" for g in range(1, 7)] + \
            ["六曜", "干支", "風水", "吉凶日", "月齢", "潮回り", "重力状態", "天気", "気温", "降水", "気圧"]
     df = pd.DataFrame(data, columns=cols)
     save_sheet("実データ", df)
@@ -1751,14 +1785,17 @@ if st.session_state.menu == "ホーム":
     next_round, _ = get_next_round_info(df_real)
     df_note = load_sheet("予測ノート")
     stacked = len(df_note[df_note["対象回号"] == f"第{next_round}回"]) if (not df_note.empty and "対象回号" in df_note.columns) else 0
+    _co_home = detect_carryover(df_real)
     st.markdown(
         f"<div class='stats'>"
         f"<div class='stat'><div class='v'>第{next_round}回</div><div class='k'>NEXT DRAW</div></div>"
         f"<div class='stat'><div class='v'>{stacked}口</div><div class='k'>STACKED</div></div>"
-        f"<div class='stat'><div class='v'>{len(df_real)}</div><div class='k'>DATA</div></div>"
+        f"<div class='stat'><div class='v'>{'💰 CO中' if _co_home else '—'}</div><div class='k'>CARRYOVER</div></div>"
         f"</div>",
         unsafe_allow_html=True,
     )
+    if _co_home:
+        st.markdown("<div class='cowork-note'>💰 <b>キャリーオーバー発生中！</b> 前回は1等該当なし＝賞金が次回へ繰越（最高12億円）。積み上げの💰スイッチは自動でONになります。</div>", unsafe_allow_html=True)
 
     # メニュー（シンプル2ボタン）
     st.markdown("<div class='sec-label'>― メニュー ―</div>", unsafe_allow_html=True)
@@ -1788,9 +1825,12 @@ elif st.session_state.menu == "最新データ取得":
     if not _dfr.empty and "回号" in _dfr.columns:
         _last = _dfr.iloc[0]
         _win = [str(_last.get(f"数字{i}", "")) for i in range(1, LOTO_PICK_COUNT + 1)]
+        _bn = [str(_last.get(c, "")).strip() for c in ("ボーナス1", "ボーナス2")]
+        _bn_txt = f"　＋　ボーナス {_bn[0]}・{_bn[1]}" if all(_bn) else ""
+        _co_txt = "<div class='ds' style='color:#A94A32;font-weight:700;'>💰 前回1等該当なし → キャリーオーバー中（次回は高額！）</div>" if detect_carryover(_dfr) else ""
         st.markdown(
             f"<div class='mission'><div class='lbl'>最新の当選番号 ・ {_last.get('回号','')}（{_last.get('抽せん日','')}）</div>"
-            f"<div class='mt'>{'　'.join(_win)}</div></div>", unsafe_allow_html=True)
+            f"<div class='mt'>{'　'.join(_win)}<span style='font-size:15px;color:#8A7A5F;'>{_bn_txt}</span></div>{_co_txt}</div>", unsafe_allow_html=True)
         _dfn = load_sheet("予測ノート")
         if not _dfn.empty and "対象回号" in _dfn.columns:
             _mine = _dfn[_dfn["対象回号"].astype(str) == str(_last.get("回号", ""))]
@@ -1888,7 +1928,11 @@ elif st.session_state.menu == "日々の予想・積上げ":
             help="探索モード＝30口を『過去頻度・引っ張り・環境共鳴・占い・他サイト…』など別々の可能性に1口ずつ割り当て、抽選後にどのレンズが近かったかを学びます（剪定はしません）。集中モード＝全部を1つの加重に混ぜて厳選。",
         )
 
-        carryover = st.checkbox("💰 今週はキャリーオーバー（高額繰越）— 人気回避を強める", value=False, help="みずほでキャリーオーバー表示の週にON。買われにくい高数字(32-37)を厚めにし、当たった時の『分け前』を最大化する狙い（確率は変わりません）。人気回避は普段も常駐していますが、高額週はさらに強めます。")
+        _co_auto = detect_carryover(df_real)
+        carryover = st.checkbox(
+            "💰 今週はキャリーオーバー（高額繰越）— 人気回避を強める" + ("　※前回1等該当なし→自動でONにしました" if _co_auto else ""),
+            value=_co_auto,
+            help="前回の1等が『該当なし』だと自動でONになります（公式ルール：1等不在の賞金は次回へ繰越）。買われにくい高数字(32-37)を厚めにし、当たった時の『分け前』を最大化する狙い（確率は変わりません）。")
 
         submitted = st.form_submit_button("🔥 超次元演算：あなたの気持ちを核に予測を積上げる")
         

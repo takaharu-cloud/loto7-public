@@ -141,6 +141,8 @@ def fetch_tokyo_weather_range(start_date, end_date):
 
 # ========== 全当選番号（lotoseven） ==========
 def fetch_loto7_full_history():
+    """全回の (回号, 日付, 本数字7, ボーナス2, 等級別当せん口数6) を取得。
+    ボーナスは公式ルール(2等/6等)の採点に必須。当せん口数は人気分析とキャリーオーバー検出用。"""
     r = requests.get("https://lotoseven.com/ap/tools/show_numbers",
                      headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=40)
     soup = BeautifulSoup(r.content.decode(r.apparent_encoding, errors="replace"), "html.parser")
@@ -156,7 +158,9 @@ def fetch_loto7_full_history():
         if len(nums) != 7:
             continue
         ymd = f"{int(m.group(1))}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
-        rows.append((int(cells[0]), ymd, [c.zfill(2) for c in nums]))
+        bonus = [c.zfill(2) for c in cells[9:11] if re.fullmatch(r"\d{1,2}", c)] if len(cells) >= 11 else []
+        winners = [c for c in cells[11:17]] if len(cells) >= 17 else []
+        rows.append((int(cells[0]), ymd, [c.zfill(2) for c in nums], bonus, winners))
     return rows
 
 
@@ -175,7 +179,7 @@ def task_backfill(client):
         for _, r in old.iterrows():
             old_w[str(r.get("抽せん日", ""))] = (str(r.get("天気", "")), str(r.get("気温", "")), str(r.get("降水", "")), str(r.get("気圧", "")))
     data = []
-    for kai, ymd, nums in rows:
+    for kai, ymd, nums, bonus, winners in rows:
         y, mo, da = (int(v) for v in ymd.split("-"))
         dd = date(y, mo, da)
         mp, mt, mg = get_moon_and_tide(y, mo, da)
@@ -185,10 +189,15 @@ def task_backfill(client):
         row = {"回号": f"第{kai}回", "抽せん日": ymd}
         for i, n in enumerate(nums):
             row[f"数字{i+1}"] = n
+        row["ボーナス1"] = bonus[0] if len(bonus) >= 1 else ""
+        row["ボーナス2"] = bonus[1] if len(bonus) >= 2 else ""
+        for gi in range(6):
+            row[f"{gi+1}等口数"] = winners[gi] if gi < len(winners) else ""
         row.update({"六曜": get_rokuyo(dd), "干支": get_eto(dd), "風水": get_fengshui(dd), "吉凶日": "特になし",
                     "月齢": mp, "潮回り": mt, "重力状態": mg, "天気": w[0], "気温": w[1], "降水": w[2], "気圧": w[3]})
         data.append(row)
     cols = ["回号", "抽せん日"] + [f"数字{i}" for i in range(1, LOTO_PICK_COUNT + 1)] + \
+           ["ボーナス1", "ボーナス2"] + [f"{g}等口数" for g in range(1, 7)] + \
            ["六曜", "干支", "風水", "吉凶日", "月齢", "潮回り", "重力状態", "天気", "気温", "降水", "気圧"]
     save_sheet(client, "実データ", pd.DataFrame(data, columns=cols))
     log(f"実データを全{len(data)}回に更新（天気付与）")
@@ -208,7 +217,8 @@ def task_score(client):
     real_key = df_real["回号"].astype(str).str.replace(r"[^0-9]", "", regex=True) if "回号" in df_real.columns else None
     for idx, row in df_note.iterrows():
         adv = str(row.get("AIの助言", ""))
-        if "的中" in adv and "等" in adv:
+        # 公式ルール採点済み(＋B表記)はスキップ。旧形式はボーナス対応で再採点。
+        if "＋B" in adv:
             continue
         _tn = re.sub(r"[^0-9]", "", str(row.get("対象回号", "")))
         match = df_real[real_key == _tn] if (real_key is not None and _tn) else df_real.iloc[0:0]
@@ -216,11 +226,24 @@ def task_score(client):
             continue
         try:
             actual = set(int(match.iloc[0].get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(match.iloc[0].get(f"数字{i}", "")).isdigit())
+            bonus = set(int(match.iloc[0].get(c)) for c in ("ボーナス1", "ボーナス2") if str(match.iloc[0].get(c, "")).strip().isdigit())
             pred = set(int(row.get(f"数字{i}")) for i in range(1, LOTO_PICK_COUNT + 1) if str(row.get(f"数字{i}", "")).isdigit())
             hits = len(actual & pred)
+            b_hits = len(bonus & pred)
             near = sum(1 for p in pred if p not in actual and ((p - 1) in actual or (p + 1) in actual))
-            grade = "👑 1等当せん！" if hits == 7 else "✨ 2等/3等相当" if hits == 6 else "🎯 4等当せん！" if hits == 5 else "🎉 5等当せん！" if hits == 4 else "惜しい！ 6等リーチ" if hits == 3 else "ハズレ"
-            df_note.at[idx, "AIの助言"] = f"{LOTO_PICK_COUNT}個中 {hits}個的中【{grade}】 / ニアピン {near}個"
+            if bonus:
+                # ★公式ルール準拠：ボーナスは2等/6等の判定に使用（宝くじ公式サイト）
+                if hits == 7: grade = "👑 1等当せん！"
+                elif hits == 6 and b_hits >= 1: grade = "✨ 2等当せん！"
+                elif hits == 6: grade = "✨ 3等当せん！"
+                elif hits == 5: grade = "🎯 4等当せん！"
+                elif hits == 4: grade = "🎉 5等当せん！"
+                elif hits == 3 and b_hits >= 1: grade = "🎊 6等当せん！"
+                else: grade = "ハズレ"
+                df_note.at[idx, "AIの助言"] = f"{LOTO_PICK_COUNT}個中 {hits}個的中＋B{b_hits}【{grade}】 / ニアピン {near}個"
+            else:
+                grade = "👑 1等当せん！" if hits == 7 else "✨ 2等/3等相当" if hits == 6 else "🎯 4等当せん！" if hits == 5 else "🎉 5等当せん！" if hits == 4 else "6等の可能性(B未取得)" if hits == 3 else "ハズレ"
+                df_note.at[idx, "AIの助言"] = f"{LOTO_PICK_COUNT}個中 {hits}個的中【{grade}】 / ニアピン {near}個"
             updated = True
         except Exception:
             continue
