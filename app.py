@@ -1809,12 +1809,6 @@ if st.session_state.menu == "ホーム":
     if get_gspread_client() is None:
         st.error("データベース接続設定（Secrets）が未完了です。")
 
-    with st.expander("📱 ホーム画面アイコン用：この画像を保存（任意）"):
-        st.caption("下の金の「7」を長押し → 『写真に追加』で保存できます。あとでホーム画面アイコンに使えます。")
-        try:
-            st.image("icon.png", width=180)
-        except Exception:
-            st.caption("画像を表示できませんでした。")
 
 elif st.session_state.menu == "最新データ取得":
     st.title("📡 結果確認")
