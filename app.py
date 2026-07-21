@@ -2244,5 +2244,3 @@ elif st.session_state.menu == "日々の予想・積上げ":
                         df_note = df_note.sort_values("実行日", ascending=False, kind="stable").reset_index(drop=True)  # 常に最新が上
                     save_sheet("予測ノート", df_note)
                     st.success(f"固定バイアスを完全排除し、動的量子シードと物理演算を駆使して、{target_round_str}に向けて最強の{len(top30)}口を積み上げました。（担当: {operator}）")
-
-            st.dataframe(df, use_container_width=True, height=300)
